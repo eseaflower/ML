@@ -130,7 +130,7 @@ def pretrainConv(trainData, nFilters, shape):
     W = layer.W.get_value()
     b = layer.b.get_value()
     plotutils.plot_columns(W, (shape[0], shape[1]))    
-    with open(r'conv_filters.pkl', 'wb') as f:
+    with open(r'.\SavedModels\conv_filters.pkl', 'wb') as f:
         pickle.dump((W, b), f)
 
 
