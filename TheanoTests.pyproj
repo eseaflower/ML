@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{74066e39-b996-478e-b3ca-50d4e07718ca}</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>mammo.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>TheanoTests</Name>
+    <RootNamespace>TheanoTests</RootNamespace>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <InterpreterId>{9a7a9026-48c1-4688-9d5d-e5699d47d074}</InterpreterId>
+    <InterpreterVersion>3.4</InterpreterVersion>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <CommandLineArguments>
+    </CommandLineArguments>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="adbuilder2.py" />
+    <Compile Include="Mammo\Context.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Mammo\DataUtils.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Mammo\MammoData.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Mammo\Transform.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Mammo\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Layers\ConvNet.py" />
+    <Compile Include="conv_test.py" />
+    <Compile Include="CSVLoader.py" />
+    <Compile Include="featuremapping.py" />
+    <Compile Include="gpu_test.py" />
+    <Compile Include="Layers\LinearRegression.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Layers\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="mammo.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="plotutils.py" />
+    <Compile Include="remoterun\contextserver.py" />
+    <Compile Include="remoterun\methodTest.py" />
+    <Compile Include="remoterun\runremote.py" />
+    <Compile Include="remoterun\subutil.py" />
+    <Compile Include="Layers\LogisticRegression.py" />
+    <Compile Include="IDXLoader.py" />
+    <Compile Include="MNISTUtil.py" />
+    <Compile Include="Layers\nnlayer.py" />
+    <Compile Include="remoterun\remoterunner.py" />
+    <Compile Include="RemoteStart.py" />
+    <Compile Include="TheanoTests.py" />
+    <Compile Include="remoterun\wireutil.py" />
+    <Compile Include="Trainer\Persistence.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="Trainer\Trainer.py" />
+    <Compile Include="Trainer\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Layers\" />
+    <Folder Include="Mammo\" />
+    <Folder Include="Trainer\" />
+    <Folder Include="remoterun\" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="{9a7a9026-48c1-4688-9d5d-e5699d47d074}\3.4" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" />
+</Project>
