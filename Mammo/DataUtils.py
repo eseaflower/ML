@@ -3,6 +3,10 @@ import glob
 import os
 from Mammo.MammoData import MammoData
 
+
+DataDirectory = r'..\Data\Mammo\mammo_data'
+
+
 def generateTranslated(sample):
     result = [sample]
     axisDisplacement = [-5, 0, 5]
@@ -32,7 +36,9 @@ def morphTrainingData(data):
     return result
 
 def loadData(size, split=0.9):
-    dir = r"E:\work\mammo_data\conv_net_mammo\*.hdr"
+    #dir = r"E:\work\mammo_data\conv_net_mammo\*.hdr"
+    dir = "{0}\conv_net_mammo\*.hdr".format(DataDirectory)
+    r"E:\work\mammo_data\conv_net_mammo\*.hdr"
     headerFiles = glob.glob(dir)
     rawData = []    
     for headerFile in headerFiles:
@@ -67,7 +73,8 @@ def generateSubPatches(sample, size):
     return result
 
 def loadPatchData(size, split=0.9):
-    dir = r"E:\work\mammo_data\conv_net_mammo_hires\*100_patch.pkl"
+    #dir = r"E:\work\mammo_data\conv_net_mammo_hires\*100_patch.pkl"
+    dir = "{0}\conv_net_mammo_hires\*100_patch.pkl".format(DataDirectory)
     pklFiles = glob.glob(dir)
     size = 50
     rawData = []
@@ -107,7 +114,8 @@ def makePatch(sample):
             sample.save(patch_filename)
 
 def handleHiResData():
-    dir = r"E:\work\mammo_data\conv_net_mammo_hires\*.hdr"
+    #dir = r"E:\work\mammo_data\conv_net_mammo_hires\*.hdr"
+    dir = "{0}\conv_net_mammo_hires\*.hdr".format(DataDirectory)
     headerFiles = glob.glob(dir)
     cnt = 1
     for headerFile in headerFiles:

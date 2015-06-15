@@ -138,7 +138,7 @@ def pretrainConv(trainData, nFilters, shape):
 def trainModel(modelFilename, trainData, validationData, size):
     
     #pretrainConv(trainData, 10, (5, 5))
-    with open(r'conv_filters.pkl', 'rb') as f:
+    with open(r'.\SavedModels\conv_filters.pkl', 'rb') as f:
         W_conv, b_conv = pickle.load(f)
 
     # Prepare testdata.
@@ -229,7 +229,7 @@ def trainModel(modelFilename, trainData, validationData, size):
                         initial_learning_rate=0.0003, 
                         epochs=1, 
                         convergence_criteria=0.0001, 
-                        max_runs=200,
+                        max_runs=5,
                         state_manager = stateMananger)
 
     validation_scores = [item["validation_score"] for item in stats]
@@ -253,7 +253,7 @@ def trainModel(modelFilename, trainData, validationData, size):
 
 def main():
     size = 50
-    filename= "test_model.pkl"
+    filename= r".\SavedModels\test_model.pkl"
     trainData, testData = loadData(size, split=0.95)
     print("Data loaded")
 
