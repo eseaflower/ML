@@ -6,10 +6,13 @@ import matplotlib.pyplot as plt
 
 
 class VariableAndData(object):
-    def __init__(self, variable, data):
+    def __init__(self, variable, data, size = None):
         self.variable = variable
         self.data = data
-        self.dataSize = self.data.get_value(borrow=True).shape[0]
+        if not size:
+            #If size is not given assume it is a shared variable
+            size = self.data.get_value(borrow=True).shape[0]
+        self.dataSize = size
     def slice(self, start, end):
         return self.data[start:end]
 

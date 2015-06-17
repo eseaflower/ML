@@ -2,7 +2,17 @@ import numpy as np
 import scipy.ndimage as nimg
 import matplotlib.pyplot as plt
 import json
+import pickle
 from Mammo.Transform import Transform, Translate, Scale
+
+
+def unpickleMammoData(filename):
+    with open(filename, 'rb') as f:
+        return pickle.load(f)
+
+def pickleMammoData(filename, data):
+    with open(filename, 'wb') as f:
+        return pickle.dump(data, f)
 
 
 class MammoData(object):
