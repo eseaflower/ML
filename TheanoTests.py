@@ -13,8 +13,8 @@ rng = numpy.random
 
 
 l = MNISTUtil.MNISTLoader()
-train_lables_filename = "./train-labels-idx1-ubyte/train-labels.idx1-ubyte"
-train_data_filename = "./train-images-idx3-ubyte/train-images.idx3-ubyte"
+train_lables_filename = r"../Data/MNIST/train-labels-idx1-ubyte/train-labels.idx1-ubyte"
+train_data_filename = r"../Data/MNIST/train-images-idx3-ubyte/train-images.idx3-ubyte"
 train_set_x, train_set_y, test_set_x, test_set_y = l.Load(train_data_filename, train_lables_filename, 0.9)
 
 

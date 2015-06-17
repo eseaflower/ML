@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{74066e39-b996-478e-b3ca-50d4e07718ca}</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>mammo.py</StartupFile>
+    <StartupFile>mammoClassification.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -30,6 +30,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="adbuilder2.py" />
+    <Compile Include="mammoClassification.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="Mammo\Context.py">
       <SubType>Code</SubType>
     </Compile>
