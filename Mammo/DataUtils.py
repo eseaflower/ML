@@ -2,7 +2,7 @@ import numpy as np
 import glob
 import os
 from Mammo.MammoData import MammoData, unpickleMammoData, pickleMammoData
-
+import random
 
 DataDirectory = r'..\Data\Mammo\mammo_data'
 
@@ -171,11 +171,30 @@ def makeClassificationPatch(sample, patchSize, nPatches):
 
 
 def makeClassificationPatches(data, patchSize):
-    nPatches = 10
+    nPatches = 50
     result = []
     for sample in data:
         result.extend(makeClassificationPatch(sample, patchSize, nPatches))
     return result
+
+def makeConvData(sample, patchSize, stride = None):
+    if not stride:
+        stride = patchSize
+        
+    w = sample.width
+    h = sample.height
+    xPositions = np.arange(0, w - patchSize + 1, stride) + (patchSize / 2)
+    yPositions = np.arange(0, h - patchSize + 1, stride) + (patchSize / 2)
+    resultPatches = []
+    resultPositions = []
+    for y in yPositions:
+        for x in xPositions:
+            newSample = sample.clone()
+            newSample.crop(x, y, patchSize, patchSize)
+            resultPatches.append(newSample)
+            resultPositions.append((x, y))
+
+    return resultPatches, resultPositions
 
             
 def loadClassificationData(split=0.9):
@@ -188,6 +207,9 @@ def loadClassificationData(split=0.9):
     # Get mirrored versions of the data
     data = generateFlippedData(data)
 
+    # shuffle the data
+    rng = np.random.RandomState(321)
+    random.shuffle(data, rng.uniform)
     return splitData(data, split)
 
             

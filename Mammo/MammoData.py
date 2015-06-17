@@ -110,8 +110,8 @@ class MammoData(object):
         if self.hasCircle:            
             yPos = np.round(self.circleY)
             xPos = np.round(self.circleX)
-            #result[self.circleY, self.circleX] = 2*np.max(result)
-            result[yPos, xPos] = 2*np.max(result)
+            if self.is_inside(xPos, yPos):
+                result[yPos, xPos] = 2*np.max(result)
         return result
 
     def getNormalizedCircle(self):
@@ -200,3 +200,7 @@ class MammoData(object):
         plt.set_cmap('gray')
         plt.imshow(self.getAnnotated())
         plt.show()
+
+    def is_inside(self, x, y):        
+        # Check bounds
+        return x >= 0 and  y >= 0 and x < self.width and y < self.height
