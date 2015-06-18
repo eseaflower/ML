@@ -91,7 +91,6 @@ def loadPatchData(size, split=0.9):
     for sample in rawData:            
         sample.quadratic(size)
         sample.normalize()
-#        sample.show()
         data.append(sample)
            
     return splitData(data, split)
@@ -154,7 +153,7 @@ def makeClassificationPatch(sample, patchSize, nPatches):
     for d in displace:
         newSample = sample.clone()
         if newSample.crop(newSample.circleX + d[0], newSample.circleY + d[1], patchSize, patchSize):
-            if (newSample.width == patchSize) and (newSample.height == patchSize):
+            if (newSample.width == patchSize) and (newSample.height == patchSize):                
                 result.append(newSample)
     
             
@@ -164,7 +163,7 @@ def makeClassificationPatch(sample, patchSize, nPatches):
     for dX, dY in zip(displaceX, displaceY):
         newSample = sample.clone()
         if not newSample.crop(dX, dY, patchSize, patchSize):
-            if (newSample.width == patchSize) and (newSample.height == patchSize):
+            if (newSample.width == patchSize) and (newSample.height == patchSize):                
                 result.append(newSample)
                             
     return result

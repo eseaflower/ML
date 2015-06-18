@@ -110,9 +110,11 @@ def testModel(modelFilename, testDataImage, patchSize):
         for e, sample in zip(errorVector, testData):
             msg = "Correct"
             if e == 1:
+                print("Is nipple: {0}".format(sample.hasCircle))
+                sample.show()
                 msg = "FAIL"        
             print("{0}: Is nipple: {1}".format(msg, sample.hasCircle))
-            sample.show()
+            #sample.show()
     
     # Call the patch tests.        
     #testPatches()
@@ -122,7 +124,7 @@ def testModel(modelFilename, testDataImage, patchSize):
                             outputs = classifier.outputLayer.p_y_given_x[:, 1])
 
         for testImage in testDataImage:    
-            convPatches, positions = utils.makeConvData(testImage, patchSize, stride=patchSize-8)
+            convPatches, positions = utils.makeConvData(testImage, patchSize, stride=patchSize-18)
             #test_x, test_y = make_shared(convPatches, patchSize)    
             test_x, test_y = utils.flattenClassification(convPatches, patchSize)
             predictions = test_func(test_x)
@@ -153,8 +155,8 @@ def testModel(modelFilename, testDataImage, patchSize):
             print("Avg error: {0}, Positive error: {1}".format(avg_error, avg_pos_error))
             heat_map = heat_map / avg_map        
             plt.set_cmap('hot')
-            #plt.imshow(heat_map*testImage.pixelData)
             plt.imshow(heat_map*testImage.pixelData)
+            #plt.imshow(heat_map)
             plt.show()
             #testImage.show()
     # Run the convolutional tests.
@@ -162,7 +164,7 @@ def testModel(modelFilename, testDataImage, patchSize):
 
 
 def main():
-    patchSize = 10
+    patchSize = 20
 
     #makeClassificationData()
     modelFilename = r".\SavedModels\test_classification_model.pkl"
