@@ -140,6 +140,12 @@ class MammoData(object):
             #self.transform.mirrorY()            
             #self.transform.translate(self.width, 0)
 
+    def verticalFlip(self):
+        self.pixelData = np.flipud(self.pixelData)
+        self.update_transform(Scale(1.0, -1.0))
+        self.update_transform(Translate(0, self.height))        
+
+
     def displace(self, x, y):
         xStart = int(np.max([0, x]))
         yStart = int(np.max([0, y]))                
@@ -204,3 +210,9 @@ class MammoData(object):
     def is_inside(self, x, y):        
         # Check bounds
         return x >= 0 and  y >= 0 and x < self.width and y < self.height
+
+    def circle_inside_margin(self, margin):
+        result = False
+        if self.hasCircle:
+            result = (self.circleX > margin) and (self.circleX < (self.width - margin)) and (self.circleY > margin) and (self.circleY < (self.height - margin))
+        return result

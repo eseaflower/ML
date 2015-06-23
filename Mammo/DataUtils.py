@@ -33,6 +33,16 @@ def generateFlippedData(data):
         result.extend([sample, morph])
     return result
 
+def generateVFlippedData(data):
+    result = []
+    for sample in data:
+        morph = sample.clone()
+        morph.verticalFlip()
+        result.extend([sample, morph])
+    return result
+
+
+
 def morphTrainingData(data):
     flippedData = generateFlippedData(data)
     result = []
@@ -143,13 +153,13 @@ def handleHiResData():
 
 
 
-def makeClassificationPatch(sample, patchSize, nPatches):
+def makeClassificationPatch(sample, patchSize, nPatches, margin):
 
     rng = np.random.RandomState(1234)
 
-    result = []
+    result = []    
     # Positive patches
-    displace = rng.uniform(-patchSize/2, patchSize/2, size = (nPatches, nPatches))    
+    displace = rng.uniform(-patchSize/2 + margin, patchSize/2 - margin, size = (nPatches, nPatches))    
     for d in displace:
         newSample = sample.clone()
         if newSample.crop(newSample.circleX + d[0], newSample.circleY + d[1], patchSize, patchSize):
@@ -158,22 +168,27 @@ def makeClassificationPatch(sample, patchSize, nPatches):
     
             
     # Negative patches.
-    displaceX = rng.uniform(0, sample.width, size = (nPatches))
-    displaceY = rng.uniform(0, sample.height, size = (nPatches))    
+    nPos = len(result)
+    displaceX = rng.uniform(0, sample.width, size = (2*nPatches))
+    displaceY = rng.uniform(0, sample.height, size = (2*nPatches))    
+    nNeg = 0
     for dX, dY in zip(displaceX, displaceY):
         newSample = sample.clone()
         if not newSample.crop(dX, dY, patchSize, patchSize):
             if (newSample.width == patchSize) and (newSample.height == patchSize):                
                 result.append(newSample)
-                            
+                nNeg += 1
+                if nNeg >= nPos:
+                    break    
+                                
     return result
 
 
-def makeClassificationPatches(data, patchSize):
+def makeClassificationPatches(data, patchSize, margin = 1):
     nPatches = 50
     result = []
     for sample in data:
-        result.extend(makeClassificationPatch(sample, patchSize, nPatches))
+        result.extend(makeClassificationPatch(sample, patchSize, nPatches, margin))
     return result
 
 def makeConvData(sample, patchSize, stride = None):
@@ -205,6 +220,7 @@ def loadClassificationData(split=0.9):
     
     # Get mirrored versions of the data
     data = generateFlippedData(data)
+    data = generateVFlippedData(data)
 
     # shuffle the data
     rng = np.random.RandomState(321)

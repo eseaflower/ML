@@ -23,12 +23,17 @@ def make_shared(data, size):
     return data_x, data_y
 
 
-def trainModel(modelFilename, allTrainDataImage, patchSize):    
+def trainModel(modelFilename, allTrainDataImage, patchSize, margin):    
     
     # Split into train and validation.
     trainDataImage, validationDataImage = utils.splitData(allTrainDataImage, 0.9)
-    trainData = utils.makeClassificationPatches(trainDataImage, patchSize)    
-    validationData = utils.makeClassificationPatches(validationDataImage, patchSize)
+    trainData = utils.makeClassificationPatches(trainDataImage, patchSize, margin)    
+    validationData = utils.makeClassificationPatches(validationDataImage, patchSize, margin)
+    
+    trainDataImage = None
+    validationDataImage = None
+    allTrainDataImage = None
+    
     print("Training data size {0}, Validation data size {1}".format(len(trainData), len(validationData)))
     
     # Create shared
@@ -64,7 +69,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize):
     # Train with adaptive learning rate.
     stats = tt.trainALR(epochFunction, 
                         valid_func, 
-                        initial_learning_rate=0.1, 
+                        initial_learning_rate=0.03, 
                         epochs=1, 
                         convergence_criteria=0.0001, 
                         max_runs=150,
@@ -85,17 +90,15 @@ def trainModel(modelFilename, allTrainDataImage, patchSize):
 
 
 
-def testModel(modelFilename, testDataImage, patchSize):
+def testModel(modelFilename, testDataImage, patchSize, margin):
 
-    
-
-    
+       
     mgr = PersistenceManager()
     mgr.set_filename(modelFilename)
     x, y, classifier = mgr.load_model()
 
     def testPatches():
-        testData = utils.makeClassificationPatches(testDataImage, patchSize)
+        testData = utils.makeClassificationPatches(testDataImage, patchSize, margin)
         test_x, test_y = make_shared(testData, patchSize)
         idx = T.lscalar()
         test_func = theano.function(inputs = [idx],
@@ -107,24 +110,30 @@ def testModel(modelFilename, testDataImage, patchSize):
         sum_error = np.sum(errorVector)
         print("#Samples: {0} Average error: {1} #Errors: {2}".format(len(testData), mean_error, sum_error))
 
+        posCnt = 0
         for e, sample in zip(errorVector, testData):
             msg = "Correct"
             if e == 1:
-                print("Is nipple: {0}".format(sample.hasCircle))
-                sample.show()
+                if sample.hasCircle:
+                    posCnt += 1
+                #print("Is nipple: {0}".format(sample.hasCircle))
+                #sample.show()
                 msg = "FAIL"        
-            print("{0}: Is nipple: {1}".format(msg, sample.hasCircle))
+            #print("{0}: Is nipple: {1}".format(msg, sample.hasCircle))
             #sample.show()
-    
+        print("#Pos error: {0}, avg: {1}".format(posCnt, posCnt / len(testData)))
+        
     # Call the patch tests.        
     #testPatches()
+    
+    
     def testConv():
         # Create prediction function
         test_func = theano.function(inputs = [x],
                             outputs = classifier.outputLayer.p_y_given_x[:, 1])
 
         for testImage in testDataImage:    
-            convPatches, positions = utils.makeConvData(testImage, patchSize, stride=patchSize-18)
+            convPatches, positions = utils.makeConvData(testImage, patchSize, stride=margin)
             #test_x, test_y = make_shared(convPatches, patchSize)    
             test_x, test_y = utils.flattenClassification(convPatches, patchSize)
             predictions = test_func(test_x)
@@ -133,17 +142,20 @@ def testModel(modelFilename, testDataImage, patchSize):
             pCnt = 0
             errors = 0
             posError = 0
-            posCount = 0
+            posCount = 0            
             for pred, pos, patch in zip(predictions, positions, convPatches):
-                if patch.hasCircle:
+                error = 0
+                if patch.circle_inside_margin(margin):
                     posCount += 1
                     if pred < 0.5:
-                        errors += 1
+                        error = 1
                         posError += 1
                     
                 else:
                     if pred >= 0.5:
-                        errors += 1
+                        error = 1
+                
+                errors += error
                 pCnt += 1
                 xStart = pos[0] - patchSize / 2
                 yStart = pos[1] - patchSize / 2
@@ -153,10 +165,27 @@ def testModel(modelFilename, testDataImage, patchSize):
             avg_error = errors / pCnt
             avg_pos_error = posError / posCount
             print("Avg error: {0}, Positive error: {1}".format(avg_error, avg_pos_error))
-            heat_map = heat_map / avg_map        
-            plt.set_cmap('hot')
-            plt.imshow(heat_map*testImage.pixelData)
+            heat_map = heat_map #/ avg_map        
+            heat_map /= np.max(heat_map)
+
+            cutoff = 0.5*np.max(heat_map)
+            heat_map -= cutoff
+            heat_map = np.clip(heat_map, 0, 1.0)
+            heat_map /= 1-cutoff
+            #idxes = heat_map > 0
+            #anot = np.copy(testImage.pixelData)
+            #anot[idxes] = np.max(anot)
+            
+
+            #plt.set_cmap('hot')
+            f, axarr = plt.subplots(2)
+            im = axarr[0].imshow(heat_map, cmap='hot')
+            im = axarr[1].imshow(testImage.pixelData, cmap='gray')
+            #plt.gray()
             #plt.imshow(heat_map)
+            #plt.imshow(heat_map*testImage.pixelData)
+            #plt.imshow(anot)
+            #plt.imshow(heat_map + 0.2*testImage.pixelData)
             plt.show()
             #testImage.show()
     # Run the convolutional tests.
@@ -164,13 +193,13 @@ def testModel(modelFilename, testDataImage, patchSize):
 
 
 def main():
-    patchSize = 20
-
+    patchSize = 16
+    margin = 4
     #makeClassificationData()
     modelFilename = r".\SavedModels\test_classification_model.pkl"
     trainDataImage, testDataImage = utils.loadClassificationData(split=0.9)
-    #trainModel(modelFilename, trainDataImage, patchSize)
-    testModel(modelFilename, testDataImage, patchSize)
+    #trainModel(modelFilename, trainDataImage, patchSize, margin)
+    testModel(modelFilename, testDataImage, patchSize, margin)
 
 
 
