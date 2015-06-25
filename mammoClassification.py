@@ -15,15 +15,46 @@ import plotutils
 import pickle
 
 
-def make_shared(data, size):
+
+def compute_ZCA(X):
+    
+    # Compute per-patch mean value.
+    mu = np.mean(X, axis = 1)
+    # X is now transposed.
+    X = (X.T - mu)
+
+    sigma = np.dot(X, X.T) / X.shape[1]
+
+    # Compute SVD
+    U, S, V = np.linalg.svd(sigma)
+    S_norm = np.diag(1./np.sqrt(S + 1e-5))
+    
+    # Compute whitening matrix (and transpose it)
+    Wmat = np.dot(U, np.dot(S_norm, U.T))    
+    # Return a matrix that can be applied on
+    # data batches with one sample per row.
+    return (Wmat.T).astype('float32')
+
+def apply_ZCA(X, Wmat):
+    X = (X.T -  np.mean(X, axis = 1)).T
+    return np.dot(X, Wmat)
+
+def preprocess_data(data, size, Wmat = None):
     # Prepare validation
-    dataX, dataY = utils.flattenClassification(data, size)
+    dataX, dataY = utils.flattenClassification(data, size)    
+    if not (Wmat is None):
+        dataX = apply_ZCA(dataX, Wmat)
+    return dataX, dataY
+
+
+def make_shared(data, size, Wmat = None):
+    # Prepare validation
+    dataX, dataY = preprocess_data(data, size, Wmat)    
     data_x = theano.shared(dataX, borrow=True)
     data_y = theano.tensor.cast(theano.shared(dataY, borrow=True), dtype='int32')
     return data_x, data_y
 
-
-def trainModel(modelFilename, allTrainDataImage, patchSize, margin):    
+def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):    
     
     # Split into train and validation.
     trainDataImage, validationDataImage = utils.splitData(allTrainDataImage, 0.9)
@@ -37,7 +68,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin):
     print("Training data size {0}, Validation data size {1}".format(len(trainData), len(validationData)))
     
     # Create shared
-    train_x, train_y = make_shared(trainData, patchSize)        
+    train_x, train_y = make_shared(trainData, patchSize, Wmat)            
 
     rng = np.random.RandomState(1234)
     # allocate symbolic variables for the data
@@ -50,7 +81,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin):
                                                             (100, nnlayer.ReluLayer),
                                                            (output_dimension, nnlayer.LogisticRegressionLayer)])
 
-    cost = classifier.cost(y) #+ 0.0001*classifier.L2_sqr
+    cost = classifier.cost(y) #+ 0.003*classifier.L2_sqr
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost)
@@ -58,7 +89,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin):
     tt = MLPBatchTrainer()
 
     # Create shared
-    validation_x, validation_y = make_shared(validationData, patchSize)
+    validation_x, validation_y = make_shared(validationData, patchSize, Wmat)
     valid_func = theano.function(inputs = [],
                             outputs = [classifier.cost(y)],
                             givens = {x:validation_x, y:validation_y})                            
@@ -69,15 +100,15 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin):
     # Train with adaptive learning rate.
     stats = tt.trainALR(epochFunction, 
                         valid_func, 
-                        initial_learning_rate=0.03, 
+                        initial_learning_rate=0.0003, 
                         epochs=1, 
                         convergence_criteria=0.0001, 
                         max_runs=150,
                         state_manager = stateMananger)
 
     validation_scores = [item["validation_score"] for item in stats]
-    #train_scorees = [item["training_costs"][-1] for item in stats]
-    train_scorees = stats[0]["training_costs"]
+    train_scorees = [item["training_costs"][-1] for item in stats]
+    #train_scorees = stats[0]["training_costs"]
     plt.plot(validation_scores, 'g')
     plt.plot(train_scorees, 'r')
     plt.show()
@@ -88,9 +119,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin):
     mgr.set_model(x, y, classifier)
     mgr.save_model()
 
-
-
-def testModel(modelFilename, testDataImage, patchSize, margin):
+def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
 
        
     mgr = PersistenceManager()
@@ -99,7 +128,7 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
 
     def testPatches():
         testData = utils.makeClassificationPatches(testDataImage, patchSize, margin)
-        test_x, test_y = make_shared(testData, patchSize)
+        test_x, test_y = make_shared(testData, patchSize, Wmat)
         idx = T.lscalar()
         test_func = theano.function(inputs = [idx],
                                 outputs = classifier.errors(y),
@@ -124,7 +153,7 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
         print("#Pos error: {0}, avg: {1}".format(posCnt, posCnt / len(testData)))
         
     # Call the patch tests.        
-    #testPatches()
+    testPatches()
     
     
     def testConv():
@@ -136,13 +165,20 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
             convPatches, positions = utils.makeConvData(testImage, patchSize, stride=margin)
             #test_x, test_y = make_shared(convPatches, patchSize)    
             test_x, test_y = utils.flattenClassification(convPatches, patchSize)
+            if not (Wmat is None):
+                test_x = apply_ZCA(test_x, Wmat)
+
+            
+
             predictions = test_func(test_x)
             heat_map = np.zeros_like(testImage.pixelData)
             avg_map = np.zeros_like(testImage.pixelData) + 1e-5
+            whitened = np.zeros_like(testImage.pixelData)
             pCnt = 0
             errors = 0
             posError = 0
             posCount = 0            
+            idx = 0
             for pred, pos, patch in zip(predictions, positions, convPatches):
                 error = 0
                 if patch.circle_inside_margin(margin):
@@ -161,6 +197,8 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
                 yStart = pos[1] - patchSize / 2
                 heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += pred
                 avg_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += 1
+                whitened[yStart:yStart + patchSize, xStart:xStart + patchSize] = test_x[idx, :].reshape(patchSize, patchSize)
+                idx += 1
 
             avg_error = errors / pCnt
             avg_pos_error = posError / posCount
@@ -168,18 +206,21 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
             heat_map = heat_map #/ avg_map        
             heat_map /= np.max(heat_map)
 
-            cutoff = 0.5*np.max(heat_map)
-            heat_map -= cutoff
-            heat_map = np.clip(heat_map, 0, 1.0)
-            heat_map /= 1-cutoff
+            #cutoff = 0.5*np.max(heat_map)
+            #heat_map -= cutoff
+            #heat_map = np.clip(heat_map, 0, 1.0)
+            #heat_map /= 1-cutoff
+            
+            
             #idxes = heat_map > 0
             #anot = np.copy(testImage.pixelData)
             #anot[idxes] = np.max(anot)
-            
+            test_x[:, :] = 0
 
             #plt.set_cmap('hot')
             f, axarr = plt.subplots(2)
-            im = axarr[0].imshow(heat_map, cmap='hot')
+            #im = axarr[0].imshow(heat_map, cmap='hot')
+            im = axarr[0].imshow(whitened, cmap='gray')
             im = axarr[1].imshow(testImage.pixelData, cmap='gray')
             #plt.gray()
             #plt.imshow(heat_map)
@@ -189,7 +230,21 @@ def testModel(modelFilename, testDataImage, patchSize, margin):
             plt.show()
             #testImage.show()
     # Run the convolutional tests.
-    testConv()        
+    #testConv()        
+
+
+def prepare_ZCA(filename, data, patchSize, margin):
+    # Prepare validation
+    data = utils.makeClassificationPatches(data, patchSize, margin) 
+    dataX, dataY = utils.flattenClassification(data, patchSize)    
+    
+    Wmat = compute_ZCA(dataX)
+    with open(filename, 'wb') as f:
+        pickle.dump(Wmat, f)
+
+def load_ZCA(filename):
+    with open(filename, 'rb') as f:
+        return pickle.load(f)
 
 
 def main():
@@ -197,9 +252,15 @@ def main():
     margin = 4
     #makeClassificationData()
     modelFilename = r".\SavedModels\test_classification_model.pkl"
-    trainDataImage, testDataImage = utils.loadClassificationData(split=0.9)
-    #trainModel(modelFilename, trainDataImage, patchSize, margin)
-    testModel(modelFilename, testDataImage, patchSize, margin)
+    zcaFilename = r".\SavedModels\ZCA.pkl"    
+    trainDataImage, testDataImage = utils.loadClassificationData(split=0.9)    
+    
+    # prepare a whitening matrix.
+    #prepare_ZCA(zcaFilename, trainDataImage, patchSize, margin)
+    Wmat = load_ZCA(zcaFilename)
+
+    trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
+    testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
 
 
 
