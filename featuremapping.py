@@ -1,5 +1,5 @@
 import numpy as np 
-import Levenshtein
+#import Levenshtein
 import re
 
 
@@ -349,6 +349,148 @@ class DictionaryLabelMap(object):
         raise NameError()
 
 
+class FeatureMapBase(object):
+    def __init__(self, accessorFunc, valueFunc):
+        self._dimension = 0
+        self._range = 0        
+        if not accessorFunc:
+            accessorFunc = lambda x: x
+        if not valueFunc:
+            valueFunc = lambda x: x
+        self.accessorFunc = accessorFunc
+        self.valueFunc = valueFunc
+    
+    def getValues(self, item):
+        return self.valueFunc(self.accessorFunc(item))
+
+    @property
+    def dimension(self):
+        return self._dimension
+    
+    @property
+    def range(self):
+        return self._range
+
+    def build(self, dataSet):
+        raise NotImplementedError()
+
+    def map(self, item):
+        raise NotImplementedError()
+
+
+class BagOfItemsMap(FeatureMapBase):
+    def __init__(self, accessorFunc, valueFunc):
+        super().__init__(accessorFunc, valueFunc)
+        self.dictionary = dict()
+                
+    def buildIndexDictionary(self, dataSet):
+        # Build a unique set of items.
+        uniqueSet = set()
+        for sample in dataSet:            
+            values = self.getValues(sample)
+            for value in values:
+                uniqueSet.add(value)
+        # With the set of unique items we can build a dictionary
+        self.dictionary = dict()
+        index = 0
+        for value in uniqueSet:
+            self.dictionary[value] = index
+            index += 1
+
+    def build(self, dataSet):
+        self.buildIndexDictionary(dataSet)
+        size = len(self.dictionary)
+        self._dimension = size
+        self._range = size
+
+    def getIndexes(self, item):
+        values = self.getValues(item)
+        uniqueIndexes = set()
+        for value in values:
+            index = self.dictionary.get(value)
+            if not (index is None):
+                uniqueIndexes.add(index)
+        result = [v for v in uniqueIndexes]
+        return result
+
+    def map(self, item):
+        result = np.zeros(self.dimension, dtype='float32')
+        indexes = self.getIndexes(item)
+        result[indexes] = 1.0
+        return result
+
+class NumberMap(FeatureMapBase):
+    def __init__(self, dimension, accessorFunc, valueFunc):
+        super().__init__(accessorFunc, valueFunc)
+        self._dimension = dimension
+        self._range = None
+    
+    def build(self, dataSet):
+        pass
+
+    def map(self, item):
+        values = self.getValues(item)
+        result = np.asarray(values, dtype='float32')
+        return result
+
+class LabelMap(BagOfItemsMap):
+    def __init__(self, accessorFunc, valueFunc):
+        super().__init__(accessorFunc, valueFunc)
+        self.inverseDictionary = dict()
+    
+    def build(self, dataSet):
+        super().build(dataSet)
+        self._dimension = 1
+        for key, value in self.dictionary.items():
+            self.inverseDictionary[value] = key
+
+    def map(self, item):
+        result = np.zeros(self.dimension, dtype='float32')
+        # Use the item index as value
+        result[:] = self.getIndexes(item)
+
+    def inverseMap(self, index):
+        result = self.inverseDictionary.get(index)
+        if result is None:
+            raise ValueError()
+        return result
+
+class ItemMapper(object):
+    def __item__(self, features, label):
+        self.featureMappers = featureMappers
+        self.labelMapper = label
+        self._dimension = sum([m.dimension for m in self.featureMappers])
+        self._range = self.labelMapper.range
+        
+    @property
+    def dimension(self):
+        return self._dimension
+    
+    @property
+    def range(self):
+        return self._range
+
+    def mapFeatures(self, dataSet):
+        numberOfSamples = len(dataSet)
+        result = np.zeros((numberOfSamples, self.dimension), dtype = 'float32')
+        for i in range(numberOfSamples):
+            if not i % 100:
+                print("Sample {0}".format(i))
+            item = dataSet[i]
+            itemFeatures = [m.map(item) for m in self.featureMappers]
+            result[i] = np.concatenate(itemFeatures)
+        return result
+
+    def mapLabels(self, dataSet):
+        numberOfSamples = len(dataSet)
+        result = np.zeros((numberOfSamples, self._range), dtype = 'float32')
+        for i in range(numberOfSamples):
+            item = dataSet[i]
+            result[i] = self.labelMapper.map(item)
+        return result
+
+    def map(self, dataSet):
+        return self.mapFeatures(dataSet), self.mapLabels(dataSet)
 
 class mapper(object):
     def __init__(self, features, label):

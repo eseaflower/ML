@@ -7,7 +7,6 @@ from Layers import LogisticRegression
 from Layers import nnlayer
 from Mammo.MammoData import MammoData
 import Mammo.DataUtils as utils
-#from Mammo.DataUtils import  makeClassificationData, loadClassificationData, makeClassificationPatches, splitData
 from Trainer.Trainer import MLPBatchTrainer, VariableAndData
 from Trainer.Persistence import PersistenceManager
 import plotutils
@@ -81,7 +80,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
                                                             (100, nnlayer.ReluLayer),
                                                            (output_dimension, nnlayer.LogisticRegressionLayer)])
 
-    cost = classifier.cost(y) #+ 0.003*classifier.L2_sqr
+    cost = classifier.cost(y) + 0.0001*classifier.L2_sqr
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost)
@@ -103,7 +102,7 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
                         initial_learning_rate=0.0003, 
                         epochs=1, 
                         convergence_criteria=0.0001, 
-                        max_runs=150,
+                        max_runs=50,
                         state_manager = stateMananger)
 
     validation_scores = [item["validation_score"] for item in stats]

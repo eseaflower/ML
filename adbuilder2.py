@@ -7,10 +7,11 @@ import theano
 import theano.tensor as T
 from Layers import LogisticRegression
 from Layers import nnlayer
-from Trainer import Trainer
+from Trainer.Trainer import MLPBatchTrainer, VariableAndData
 import random
 import time
 import sys
+import matplotlib.pyplot as plt
 
 
 def getModalitySet():
@@ -53,9 +54,9 @@ def split(x, y, factor):
     return trainX, trainY, testX, testY
 
 
-def buildData(siteName, outName, resultSize):
+def buildData(filename, outName, resultSize):
     loader = CSVLoader.Loader()
-    headers, rawData = loader.Load("./AnatomyData/{0}.txt".format(siteName))
+    headers, rawData = loader.Load(filename)#loader.Load("./AnatomyData/{0}.txt".format(siteName))
     #headers, rawData = loader.Load("./AnatomyData/mod2All.txt")
     idIndex = None
     labelIndex = None
@@ -78,6 +79,7 @@ def buildData(siteName, outName, resultSize):
 
 
     trainX, trainY, testX, testY = split(countAndRawX, rawY, 0.99)
+    trainX, trainY, validationX, validationY = split(trainX, trainY, 0.99)
     print("Train {0}, Test {1}".format(len(trainX), len(testX)))
         
 
@@ -111,6 +113,7 @@ def buildData(siteName, outName, resultSize):
 
     print("Beginning mapping of {0} samples".format(len(trainX)))
     mappedTrainX, mappedTrainY = pipe.map(trainX, trainY)
+    mappedValidationX, mappedValidationY = pipe.map(validationX, validationY)
     print("Map completed")    
 
     #Data normalization
@@ -122,11 +125,14 @@ def buildData(siteName, outName, resultSize):
     mu = np.mean(mappedTrainX, axis=0)
     sdev = np.std(mappedTrainX, axis=0) + 1e-5
     mappedTrainX = (mappedTrainX - mu) / sdev
-
+    mappedValidationX = (mappedValidationX - mu) / sdev
 
     # Create Theano shared data
     train_x = theano.shared(mappedTrainX, borrow=True)    
     train_y = T.cast(theano.shared(mappedTrainY, borrow=True), 'int32')
+    validation_x = theano.shared(mappedValidationX, borrow=True)    
+    validation_y = T.cast(theano.shared(mappedValidationY, borrow=True), 'int32')
+        
     train_weight = theano.shared(mappedWeights, borrow=True)
 
     rng = np.random.RandomState(1234)
@@ -144,9 +150,18 @@ def buildData(siteName, outName, resultSize):
     # the model in symbolic format
     input_dimension = pipe.getDimension()
     output_dimension = labelMapper.getRange()
-    classifier = nnlayer.MLP(rng=rng, input=x, topology=[input_dimension, 100, output_dimension])
-    cost = classifier.negative_log_likelihood(y, weight=weight) + 0.00003*classifier.L2_sqr
-    costFunction = (classifier.params, cost)
+    classifier = nnlayer.MLPReg(rng=rng, input=x, topology=[(input_dimension,),
+                                                            (100, nnlayer.ReluLayer),
+                                                           (output_dimension, nnlayer.LogisticRegressionLayer)])
+
+    cost = classifier.cost(y) + 0.0001*classifier.L2_sqr
+    costParams = []
+    costParams.extend(classifier.params)
+    costFunction = (costParams, cost)
+
+    #classifier = nnlayer.MLP(rng=rng, input=x, topology=[input_dimension, 100, output_dimension])    
+    #cost = classifier.negative_log_likelihood(y, weight=weight) + 0.00003*classifier.L2_sqr
+    #costFunction = (classifier.params, cost)
 
     cum_dim = 0
     for p in classifier.params:    
@@ -154,12 +169,41 @@ def buildData(siteName, outName, resultSize):
     print("Model dimension: {0}".format(cum_dim))
 
 
+
+    # Create validation function.
+    valid_func = theano.function(inputs = [],
+                        outputs = [classifier.cost(y)],
+                        givens = {x:validation_x, y:validation_y})                            
+
     # Create trainer
-    tt = Trainer.MLPBatchTrainer()    
-    t0 = time.time()
-    epoch_costs = tt.train(x, y, costFunction, train_x, train_y, batch_size = 512 , learning_rate=0.01, epochs=10, weight = weight, train_weight=train_weight, rms = True)
-    t1 = time.time()
-    print("Training time: {0}".format(t1 - t0))
+    tt = MLPBatchTrainer()
+    
+    variableAndData = (VariableAndData(x, train_x), VariableAndData(y, train_y, size=len(trainX)))
+    epochFunction, stateMananger = tt.getEpochTrainer(costFunction, variableAndData, batch_size=64, rms = True)        
+        
+    # Train with adaptive learning rate.
+    stats = tt.trainALR(epochFunction, 
+                        valid_func, 
+                        initial_learning_rate=0.01, 
+                        epochs=2, 
+                        convergence_criteria=0.0001, 
+                        max_runs=10,
+                        state_manager = stateMananger)
+
+
+    validation_scores = [item["validation_score"] for item in stats]
+    train_scorees = [item["training_costs"][-1] for item in stats]
+    #train_scorees = stats[0]["training_costs"]
+    plt.plot(validation_scores, 'g')
+    plt.plot(train_scorees, 'r')
+    plt.show()
+
+    # Create trainer
+    #tt = MLPBatchTrainer()    
+    #t0 = time.time()
+    #epoch_costs = tt.train(x, y, costFunction, train_x, train_y, batch_size = 512 , learning_rate=0.01, epochs=10, weight = weight, train_weight=train_weight, rms = True)
+    #t1 = time.time()
+    #print("Training time: {0}".format(t1 - t0))
     
     
     input("Enter to continue:>")
@@ -223,7 +267,7 @@ def buildData(siteName, outName, resultSize):
     
 
 if __name__ == "__main__":
-    inFile = "mod2All"
+    inFile = r"..\Data\Anatomy\mod2All.txt"#"mod2All"
     outFile = None#"nikresult"
     resultSize = 100
     if len(sys.argv) == 4:

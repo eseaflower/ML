@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{74066e39-b996-478e-b3ca-50d4e07718ca}</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>mammoClassification.py</StartupFile>
+    <StartupFile>adbuilder2.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
