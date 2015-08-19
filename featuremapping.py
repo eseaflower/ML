@@ -371,7 +371,7 @@ class FeatureMapBase(object):
     def range(self):
         return self._range
 
-    def build(self, dataSet):
+    def build(self, data):
         raise NotImplementedError()
 
     def map(self, item):
@@ -383,22 +383,25 @@ class BagOfItemsMap(FeatureMapBase):
         super().__init__(accessorFunc, valueFunc)
         self.dictionary = dict()
                 
-    def buildIndexDictionary(self, dataSet):
+    def getUniqueValues(self, dataSet):
         # Build a unique set of items.
         uniqueSet = set()
         for sample in dataSet:            
             values = self.getValues(sample)
             for value in values:
                 uniqueSet.add(value)
-        # With the set of unique items we can build a dictionary
+        return uniqueSet
+
+    def buildIndexDictionary(self, terms):
+        # With the set of terms we can build a dictionary
         self.dictionary = dict()
         index = 0
-        for value in uniqueSet:
-            self.dictionary[value] = index
+        for term in terms:
+            self.dictionary[term] = index
             index += 1
 
-    def build(self, dataSet):
-        self.buildIndexDictionary(dataSet)
+    def build(self, terms):
+        self.buildIndexDictionary(terms)
         size = len(self.dictionary)
         self._dimension = size
         self._range = size
@@ -425,7 +428,7 @@ class NumberMap(FeatureMapBase):
         self._dimension = dimension
         self._range = None
     
-    def build(self, dataSet):
+    def build(self, data):
         pass
 
     def map(self, item):
@@ -438,8 +441,8 @@ class LabelMap(BagOfItemsMap):
         super().__init__(accessorFunc, valueFunc)
         self.inverseDictionary = dict()
     
-    def build(self, dataSet):
-        super().build(dataSet)
+    def build(self, labels):
+        super().build(labels)
         self._dimension = 1
         for key, value in self.dictionary.items():
             self.inverseDictionary[value] = key

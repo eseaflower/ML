@@ -54,6 +54,11 @@ def split(x, y, factor):
     return trainX, trainY, testX, testY
 
 
+def splitData(data, split=0.9):
+    trainSize = int(len(data)*split)
+    return data[0:trainSize], data[trainSize:]
+
+
 def buildData(filename, outName, resultSize):
     loader = CSVLoader.Loader()
     headers, rawData = loader.Load(filename)#loader.Load("./AnatomyData/{0}.txt".format(siteName))
@@ -69,9 +74,17 @@ def buildData(filename, outName, resultSize):
         cnt += 1
     
     rawData = sorted(rawData, key=lambda x:int(x[0]), reverse=True)
+    labeledData = [item for item in rawData if not (item[labelIndex].upper() == 'UNKNOWN')]
+    trainData, testData = splitData(labeledData, split=0.99)
+    trainData, validationData = splitData(trainData, split=0.99)
+    print("Train {0}, Test {1}, Validation {2}".format(len(trainData), len(testData), len(validationData)))
     
+    modality = fm.BagOfItemsMap(lambda x: x[1], fm.splitUpper)
+    modality.build(modality.getUniqueValues(trainData))
+    code = fm.BagOfItemsMap(lambda x: x[2], lambda x: [p[0:min(len(p), 3)] for p in fm.splitUpper(x)])
+    code.build(code.getUniqueValues(trainData))
     #random.shuffle(rawData)
-
+    
     dataSize = 1000
     countAndRawX, rawY = filterRawData(rawData, labelIndex)
     #countAndRawX = countAndRawX[0:dataSize]
