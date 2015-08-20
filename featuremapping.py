@@ -33,7 +33,7 @@ def buildCodepartLookup(s, func):
     return buildLookup(splitSet)
 
 def splitUpper(item):
-    regexp = ' |\^|/|,|\.|\+|_'        
+    regexp = ' |\^|/|,|\.|\+|_|\(|\)|-'        
     return [u.upper() for u in re.split(regexp,  item)]
 
 def tfidf(data, index):
@@ -348,6 +348,37 @@ class DictionaryLabelMap(object):
                 return key
         raise NameError()
 
+
+
+def getTermCount(featureMap, dataSet):
+    termCount = dict()
+    for item in dataSet:
+        values = featureMap.getValues(item)
+        for value in values:
+            termCount[value] = termCount.get(value, 0) + 1    
+    return termCount
+
+def getCommonTerms(featureMap, dataSet, minCount = None, size = None):    
+    termCount = getTermCount(featureMap, dataSet)    
+    sortedTerms = sorted(termCount.items(), key = lambda x: x[1], reverse = True)
+    
+    if not minCount:
+        minCount = -1        
+    if not size:
+        size = len(sortedTerms)
+
+    def commonGenerator():
+        count = 0
+        for t in sortedTerms:
+            # As soon as the predicate is true, we stop
+            # generating.
+            if t[1] < minCount or count >= size:
+                return
+            count += 1
+            yield t[0]
+    
+    return [t for t in commonGenerator()]
+    
 
 class FeatureMapBase(object):
     def __init__(self, accessorFunc, valueFunc):

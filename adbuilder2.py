@@ -83,6 +83,14 @@ def buildData(filename, outName, resultSize):
     modality.build(modality.getUniqueValues(trainData))
     code = fm.BagOfItemsMap(lambda x: x[2], lambda x: [p[0:min(len(p), 3)] for p in fm.splitUpper(x)])
     code.build(code.getUniqueValues(trainData))
+    body = fm.BagOfItemsMap(lambda x: x[3], fm.splitUpper)
+    body.build(fm.getCommonTerms(body, trainData, minCount = None, size = 200))
+    description = fm.BagOfItemsMap(lambda x: x[4], fm.splitUpper)
+    description.build(fm.getCommonTerms(description, trainData, minCount = 10, size = None))
+
+    
+
+
     #random.shuffle(rawData)
     
     dataSize = 1000
