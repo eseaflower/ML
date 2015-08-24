@@ -1,354 +1,11 @@
 import numpy as np 
-#import Levenshtein
 import re
 
 
-def buildLookup(s):
-    index = 0
-    result = dict()
-    for item in s:
-        if not item in result:
-            result[item] = index
-            index += 1
-    return result
-
-def buildLookup2(s, indexFunction):
-    index = 0
-    result = dict()
-    for row in s:
-        item = indexFunction(row)
-        if not item in result:
-            result[item] = index
-            index += 1
-    return result
-
-
-def buildCodepartLookup2(s,indexFunction, func):
-    splitSet = [func(indexFunction(m)) for m in s]
-    return buildLookup(splitSet)
-
-
-def buildCodepartLookup(s, func):
-    splitSet = [func(m) for m in s]
-    return buildLookup(splitSet)
 
 def splitUpper(item):
     regexp = ' |\^|/|,|\.|\+|_|\(|\)|-'        
     return [u.upper() for u in re.split(regexp,  item)]
-
-def tfidf(data, index):
-    wordDict = dict()
-    totalDocuments = 0
-    for row in data:
-        count = int(row[0])
-        totalDocuments += count
-        doc = row[index]
-        docSplit = splitUpper(doc)        
-        seenWords = set()
-        for word in docSplit:
-            wordEntry = wordDict.get(word)
-            if not wordEntry:
-                wordEntry = {"wc":0, "dc":0, "tfidf":0.}
-                wordDict[word] = wordEntry
-            
-            wordEntry["wc"] += count            
-            if word not in seenWords:
-                seenWords.add(word)
-                wordEntry["dc"] += count
-
-    
-    
-    for kv in wordDict.items():
-        word = kv[0]
-        entry = kv[1]
-        score = 0
-        if entry["dc"] > 2:
-            tf = (entry["wc"] / float(entry["dc"]))    
-            idf = np.log(totalDocuments / entry["dc"])    
-            score = tf * idf  
-        entry["tfidf"] = score
-                
-    return wordDict
-
-
-def selectTerms(data, index):
-    words = tfidf(data, index)
-    sortedWords = sorted(words.items(), key=lambda x:x[1]["dc"], reverse = True)
-    terms = []    
-
-    for e in sortedWords:
-        if e[1]["dc"] > 500:
-            terms.append(e[0])            
-    return terms
-
-def computeConditionals(data, index, labels):
-        
-    labelDict = dict()
-    wordDict = dict()
-
-    setSize = 0
-
-    for rowIndex in range(len(data)):
-        row = data[rowIndex]
-        count = int(row[0])
-        label = labels[rowIndex].upper()
-        
-        setSize += count
-
-        labelEntry = labelDict.get(label)
-        if labelEntry == None:
-            labelEntry = {"classCount": 0}
-            labelDict[label] = labelEntry
-        labelEntry["classCount"] += count
-
-        doc = row[index]
-        docSplit = splitUpper(doc)        
-        seenWords = set()
-        
-        
-        for word in docSplit:
-            if word not in seenWords:
-                seenWords.add(word)
-                wordEntry = wordDict.get(word)
-                if not wordEntry:
-                    wordEntry = {"count":0, "classDict":dict()}                
-                    wordDict[word] = wordEntry
-                wordEntry["count"] += count
-                classEntry = wordEntry["classDict"].get(label)
-                if not classEntry:
-                    classEntry = {"count":0}
-                    wordEntry["classDict"][label] = classEntry
-                classEntry["count"] += count    
-    
-
-
-    totalEntropy = 0.0                
-    for k, v in labelDict.items():
-        pLabel = v["classCount"] / setSize
-        totalEntropy += -pLabel*np.log2(pLabel)            
-
-    
-    # Compute conditional probabillties    
-    tstDict = dict()
-    for k, v in wordDict.items():
-        #Compute the probabillity of word k in the dataset.
-        totalWordCount = v["count"]
-        
-        pWord =  totalWordCount/ setSize
-        #Compute entropy of the set of examples where k is present. H(C|x=k) = SUM(classes)=>P(Ci|x=k)*log(P(Ci|x=k)
-        acc = 0.0
-        for cl, clc in v["classDict"].items():
-            pc = clc["count"] / totalWordCount            
-            acc += -pc * np.log2(pc)
-        
-
-        # Estimate entropy when ferature is not present with the global entropy
-        fakeIg = totalEntropy - acc*pWord - (1-pWord)*totalEntropy
-        tstDict[k] = fakeIg
-                        
-        
-    tstDict = sorted(tstDict.items(), key=lambda x:x[1], reverse=True)
-    #print(len(tstDict))
-    #input("ldsakjgf")
-    numTerms = min(len(tstDict), 300)
-
-    termList = [x[0] for x in tstDict[:numTerms]]
-    return termList
-
-
-def selectTopWords(items, indexFunction, numberOfWords):
-    wordCounts = dict()
-    for row in items:
-        value = indexFunction(row)
-        words = splitUpper(value)
-        for w in words:
-            if w not in wordCounts:
-                wordCounts[w] = 1
-            else:
-                wordCounts[w] = wordCounts[w] + 1
-
-    sortedDictionary = sorted(wordCounts.items(), key=lambda x: x[1], reverse=True)
-    toSelect = min(len(sortedDictionary), numberOfWords)
-    return [x[0] for x in sortedDictionary[:toSelect]]
-
-
-class DictionaryFeatureMap2(object):
-    def __init__(self, items, indexFunction):
-        self.indexFunction = indexFunction
-        self.dictionary = buildLookup(items)
-        self.dimension = len(self.dictionary)
-        return
-        
-    def getDimension(self):
-        return self.dimension
-    
-    def map(self, row):
-        sample = self.indexFunction(row)
-        values = splitUpper(sample)
-        result = np.zeros(self.dimension, dtype='float32')
-        for value in values:
-            if value in self.dictionary:
-                index = self.dictionary[value]
-                result[index] = 1.0
-        return result
-
-class CodePartFeatureMap2(object):
-    def __init__(self, items, indexFunction, splitFunction):
-        self.indexFunction = indexFunction
-        self.splitFunction = splitFunction
-        self.dictionary = buildCodepartLookup2(items, self.indexFunction, self.splitFunction)
-        self.dimension = len(self.dictionary)
-        return
-
-    def getDimension(self):
-        return self.dimension
-    
-    def map(self, sample):
-        values = splitUpper(self.indexFunction(sample))
-        result = np.zeros(self.dimension, dtype='float32')
-        for rawValue in values:
-            value = self.splitFunction(rawValue)
-            if value in self.dictionary:
-                index = self.dictionary[value]
-                result[index] = 1.0
-        return result
-
-class DictionaryLabelMap2(object):
-    def __init__(self, items, indexFunction):
-        self.indexFunction = indexFunction
-        self.dictionary = buildLookup([indexFunction(s).upper() for s in items])      
-        self.dimension = 1
-        self.range =len(self.dictionary)
-
-    def getDimension(self):
-        return self.dimension
-
-    def getRange(self):
-        return self.range
-
-    def map(self, value):
-        result = np.zeros(self.dimension, dtype='float32')
-        result = self.dictionary[self.indexFunction(value).upper()]
-        return result
-
-    def inverseMap(self, index):
-        for key, value in self.dictionary.items():
-            if index == value:
-                return key
-        raise NameError()
-
-
-
-
-
-class DictionaryFeatureMap(object):
-    def __init__(self, items, index):
-        self.dictionary = buildLookup(items)
-        self.dimension = len(self.dictionary)
-        self.index = index
-        return
-        
-    def getDimension(self):
-        return self.dimension
-    
-    def map(self, sample):
-        values = splitUpper(sample[self.index])
-        result = np.zeros(self.dimension, dtype='float32')
-        for value in values:
-            if value in self.dictionary:
-                index = self.dictionary[value]
-                result[index] = 1.0
-        return result
-
-class CodePartFeatureMap(object):
-    def __init__(self, items, index, splitFunction):
-        self.splitFunction = splitFunction
-        self.dictionary = buildCodepartLookup(items, self.splitFunction)
-        self.dimension = len(self.dictionary)
-        self.index = index        
-        return
-
-    def getDimension(self):
-        return self.dimension
-    
-    def map(self, sample):
-        values = splitUpper(sample[self.index])
-        result = np.zeros(self.dimension, dtype='float32')
-        for rawValue in values:
-            value = self.splitFunction(rawValue)
-            if value in self.dictionary:
-                index = self.dictionary[value]
-                result[index] = 1.0
-        return result
-
-class CodeFeatureMap(object):
-    def __init__(self, index):
-        self.dimension = 5
-        self.index = index
-        return
-
-    def getDimension(self):
-        return self.dimension
-    
-    def map(self, sample):
-        values = splitUpper(sample[self.index])
-        valueOfInteres = values[0]
-        result = np.zeros(self.dimension, dtype='float32')
-        index = 0
-        for part in valueOfInteres:                            
-            if part.isdigit():                
-                result[index] = int(part) / 10.0            
-            index += 1
-            if index >= self.dimension:
-                break        
-        return result
-
-class TermDictionaryFeatureMap(object):
-    def __init__(self, termSet, index):
-        self.terms = termSet        
-        self.dimension = len(self.terms)
-        self.index = index
-        return
-    
-    def getDimension(self):
-        return self.dimension
-
-    def termDistance(self, term):
-        return np.array([Levenshtein.jaro(term, k) for k in self.terms])
-    
-    def map(self, sample):
-        values = splitUpper(sample[self.index])
-        result = np.zeros(self.dimension, dtype='float32')
-        for value in values:
-            result = np.max([result, self.termDistance(value)], axis = 0)
-        
-        #result[result < 0.99] = 0.0
-        return result
-
-class DictionaryLabelMap(object):
-    def __init__(self, labels):
-        self.dictionary = buildLookup([u.upper() for u in labels])
-        self.dimension = 1
-        self.range =len(self.dictionary)
-
-    def getDimension(self):
-        return self.dimension
-
-    def getRange(self):
-        return self.range
-
-    def map(self, value):
-        result = np.zeros(self.dimension, dtype='float32')
-        result = self.dictionary[value.upper()]
-        return result
-
-    def inverseMap(self, index):
-        for key, value in self.dictionary.items():
-            if index == value:
-                return key
-        raise NameError()
-
-
 
 def getTermCount(featureMap, dataSet):
     termCount = dict()
@@ -379,7 +36,6 @@ def getCommonTerms(featureMap, dataSet, minCount = None, size = None):
     
     return [t for t in commonGenerator()]
     
-
 class FeatureMapBase(object):
     def __init__(self, accessorFunc, valueFunc):
         self._dimension = 0
@@ -407,7 +63,6 @@ class FeatureMapBase(object):
 
     def map(self, item):
         raise NotImplementedError()
-
 
 class BagOfItemsMap(FeatureMapBase):
     def __init__(self, accessorFunc, valueFunc):
@@ -482,6 +137,7 @@ class LabelMap(BagOfItemsMap):
         result = np.zeros(self.dimension, dtype='float32')
         # Use the item index as value
         result[:] = self.getIndexes(item)
+        return result
 
     def inverseMap(self, index):
         result = self.inverseDictionary.get(index)
@@ -490,8 +146,8 @@ class LabelMap(BagOfItemsMap):
         return result
 
 class ItemMapper(object):
-    def __item__(self, features, label):
-        self.featureMappers = featureMappers
+    def __init__(self, features, label):
+        self.featureMappers = features
         self.labelMapper = label
         self._dimension = sum([m.dimension for m in self.featureMappers])
         self._range = self.labelMapper.range
@@ -517,56 +173,85 @@ class ItemMapper(object):
 
     def mapLabels(self, dataSet):
         numberOfSamples = len(dataSet)
-        result = np.zeros((numberOfSamples, self._range), dtype = 'float32')
+        result = np.zeros((numberOfSamples, ), dtype = 'float32')
         for i in range(numberOfSamples):
-            item = dataSet[i]
+            item = dataSet[i]            
             result[i] = self.labelMapper.map(item)
         return result
 
     def map(self, dataSet):
         return self.mapFeatures(dataSet), self.mapLabels(dataSet)
 
-class mapper(object):
-    def __init__(self, features, label):
-        self.featureMappers = features
-        self.labelMapper = label
-        self.dimension = sum([m.getDimension() for m in self.featureMappers])
-        self.range = label.getRange()
-        return
 
-    def getDimension(self):
-        return self.dimension
 
-    def mapX(self, x):
-        nSamples = len(x)
-        mappedX = np.zeros((nSamples, self.dimension), dtype='float32')
-        
-        nRawFeatures = len(self.featureMappers)
-        for i in range(nSamples):
-            if not i % 100:
-                print("Sample {0}".format(i))
-            
-            sample = x[i]
-            allFeatures = []
-            for fMap in self.featureMappers:                
-                allFeatures.append(fMap.map(sample))
-            mappedX[i] = np.concatenate(allFeatures)
-        
-        return mappedX
+class FieldDescriptor(object):
+    def __init__(self, key, mapper):
+        self._key = key
+        self._mapper = mapper
     
-    def mapY(self, y):
-        nSamples = len(y)
-        mappedY = np.zeros(nSamples, dtype='float32')                
-        nRawFeatures = len(self.featureMappers)
-        for i in range(nSamples):
-            mappedY[i] = self.labelMapper.map(y[i])
+    @property
+    def key(self):
+        return self._key    
+    @property
+    def mapper(self):
+        return self._mapper
 
-        return mappedY
-
-    def map(self, x, y):
-        return self.mapX(x), self.mapY(y)
+class DictionaryField(FieldDescriptor):
+    def __init__(self, key, minCount = None, size = None):        
+        super().__init__(key, BagOfItemsMap(lambda x: x[key], splitUpper))            
+        self.minCount = minCount
+        self.maxSize = size
     
-    def map2(self, data):
-        return self.mapX(data), self.mapY(data)
+    def build(self, dataSet):
+        self.mapper.build(getCommonTerms(self.mapper, dataSet, self.minCount, self.maxSize))
 
+class NumberField(FieldDescriptor):
+    def __init__(self, key, dimension):
+        super().__init__(key, NumberMap(lambda x: x[key], lambda x: float(x)))
+    
+    def build(self, dataSet):
+        pass
 
+class LabelField(FieldDescriptor):
+    def __init__(self, key):
+        super().__init__(key, LabelMap(lambda x: x[key], splitUpper))    
+    
+    def build(self, dataSet):
+        self.mapper.build(self.mapper.getUniqueValues(dataSet))
+
+class ItemMapperBuilder(object):
+    def __init__(self, description):
+        self.description = description        
+
+    def build(self, dataSet):
+        features = []
+        label = None
+        for field in self.description:
+            typeField = self.createField(field)
+            typeField.build(dataSet)
+            if  type(typeField) is LabelField:
+                if label is not None:
+                    raise AssertionError()
+                label = typeField
+            else:
+                features.append(typeField)
+
+        self.pipe = ItemMapper(features, label)
+
+    def createField(self, field):
+        result = None
+        type = field["type"]
+        key = field["key"]        
+        
+        if type == "dict":
+            minCount = int(field.get("minCount"))
+            size = int(field.get("size"))
+            result = DictionaryField(key, minCount, size)
+        elif type == "num":
+            dim = int(field["dim"])
+            result = NumberField(key, dim)
+        elif type == "label":
+            result = LabelField(key)        
+        else:
+            raise NotImplementedError()
+        return result
