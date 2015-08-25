@@ -197,13 +197,17 @@ class FieldDescriptor(object):
         return self._mapper
 
 class DictionaryField(FieldDescriptor):
-    def __init__(self, key, minCount = None, size = None):        
-        super().__init__(key, BagOfItemsMap(lambda x: x[key], splitUpper))            
+    def __init__(self, key, minCount = None, size = None, valueLength = None):        
+        valueFunc = splitUpper
+        if valueLength:
+            valueFunc = lambda x: [p[:min(len(p), valueLength)] for p in splitUpper(x)]
+        super().__init__(key, BagOfItemsMap(lambda x: x[key], valueFunc))            
         self.minCount = minCount
         self.maxSize = size
     
     def build(self, dataSet):
         self.mapper.build(getCommonTerms(self.mapper, dataSet, self.minCount, self.maxSize))
+
 
 class NumberField(FieldDescriptor):
     def __init__(self, key, dimension):
@@ -232,9 +236,9 @@ class ItemMapperBuilder(object):
             if  type(typeField) is LabelField:
                 if label is not None:
                     raise AssertionError()
-                label = typeField
+                label = typeField.mapper
             else:
-                features.append(typeField)
+                features.append(typeField.mapper)
 
         self.pipe = ItemMapper(features, label)
 
@@ -244,14 +248,16 @@ class ItemMapperBuilder(object):
         key = field["key"]        
         
         if type == "dict":
-            minCount = int(field.get("minCount"))
-            size = int(field.get("size"))
-            result = DictionaryField(key, minCount, size)
+            minCount = field.get("minCount")
+            size = field.get("size")
+            valueLength = field.get("valueLength")
+            result = DictionaryField(key, minCount, size, valueLength)
         elif type == "num":
-            dim = int(field["dim"])
+            dim = field["dim"]
             result = NumberField(key, dim)
         elif type == "label":
             result = LabelField(key)        
+        
         else:
             raise NotImplementedError()
         return result

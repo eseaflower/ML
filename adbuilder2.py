@@ -59,52 +59,50 @@ def splitData(data, split=0.9):
     return data[0:trainSize], data[trainSize:]
 
 
+
 def buildData(filename, outName, resultSize):
     loader = CSVLoader.Loader()
-    headers, rawData = loader.Load(filename)
-    
-    idIndex = None
-    labelIndex = None
-    cnt = 0
-    for h in headers:
-        if h.upper() == 'ID':
-            idIndex = cnt            
-        elif h.upper() == 'LABEL':
-            labelIndex = cnt
-        cnt += 1
-    
+    rawData = loader.LoadAsItems(filename)        
 
-    #rawData = rawData[:100]
+    rawData = rawData[:100]    
 
-
-    rawData = sorted(rawData, key=lambda x:int(x[0]), reverse=True)
-    labeledData = [item for item in rawData if not (item[labelIndex].upper() == 'UNKNOWN')]
+    rawData = sorted(rawData, key=lambda x:int(x['Count']), reverse=True)
+    labeledData = [item for item in rawData if not (item['Label'].upper() == 'UNKNOWN')]
     trainData, testData = splitData(labeledData, split=0.99)
     trainData, validationData = splitData(trainData, split=0.99)
     print("Train {0}, Test {1}, Validation {2}".format(len(trainData), len(testData), len(validationData)))
     
-    modality = fm.BagOfItemsMap(lambda x: x[1], fm.splitUpper)
-    modality.build(modality.getUniqueValues(trainData))
-    code = fm.BagOfItemsMap(lambda x: x[2], lambda x: [p[0:min(len(p), 3)] for p in fm.splitUpper(x)])
-    code.build(code.getUniqueValues(trainData))
-    body = fm.BagOfItemsMap(lambda x: x[3], fm.splitUpper)
-    body.build(fm.getCommonTerms(body, trainData, minCount = None, size = 200))
-    description = fm.BagOfItemsMap(lambda x: x[4], fm.splitUpper)
-    description.build(fm.getCommonTerms(description, trainData, minCount = 10, size = None))
-    label = fm.LabelMap(lambda x: x[labelIndex], fm.splitUpper)
-    label.build(label.getUniqueValues(trainData))
+    #modality = fm.BagOfItemsMap(lambda x: x[1], fm.splitUpper)
+    #modality.build(modality.getUniqueValues(trainData))
+    #code = fm.BagOfItemsMap(lambda x: x[2], lambda x: [p[0:min(len(p), 3)] for p in fm.splitUpper(x)])
+    #code.build(code.getUniqueValues(trainData))
+    #body = fm.BagOfItemsMap(lambda x: x[3], fm.splitUpper)
+    #body.build(fm.getCommonTerms(body, trainData, minCount = None, size = 200))
+    #description = fm.BagOfItemsMap(lambda x: x[4], fm.splitUpper)
+    #description.build(fm.getCommonTerms(description, trainData, minCount = 10, size = None))
+    #label = fm.LabelMap(lambda x: x[labelIndex], fm.splitUpper)
+    #label.build(label.getUniqueValues(trainData))
 
-    itemMapper =  fm.ItemMapper([modality, code, body, description], label)
+    #itemMapper =  fm.ItemMapper([modality, code, body, description], label)
+
+    desc = [
+            {"key":'Modality', "type":"dict"},
+            {"key":'Code', "type":"dict", "valueLength":3},
+            {"key":'Body Part', "type":"dict", "size":200},
+            {"key":'Description', "type":"dict", "minCount":10},
+            {"key":'Label', "type":"label"}
+        ]
+
+    builder = fm.ItemMapperBuilder(desc)
+    builder.build(trainData)
+    itemMapper = builder.pipe
+
     print("Beginning mapping of {0} samples".format(len(trainData)))
     mappedTrainX, mappedTrainY = itemMapper.map(trainData)
     mappedValidationX, mappedValidationY = itemMapper.map(validationData)
     
     
     print("Map completed")    
-
-
-
-        
 
     mu = np.mean(mappedTrainX, axis=0)
     sdev = np.std(mappedTrainX, axis=0) + 1e-5
@@ -199,7 +197,7 @@ def buildData(filename, outName, resultSize):
     for i in range(len(errorVector)):
         if errorVector[i][0] > 0.0:
             errCount += 1
-            print("Error: {0}, Label:{1}, Predicted:{2}".format(testData[i], testData[i][labelIndex], label.inverseMap(int(errorVector[i][1]))))
+            print("Error: {0}, Label:{1}, Predicted:{2}".format(testData[i], testData[i]['Label'], itemMapper.labelMapper.inverseMap(int(errorVector[i][1]))))
 
     print("Avg: {0}".format(errCount / len(errorVector)))
 
