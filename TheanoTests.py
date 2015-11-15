@@ -48,13 +48,13 @@ valid_func = theano.function(inputs = [],
                         givens = {x:validation_set_x, y:validation_set_y})                            
 
 variableAndData = (VariableAndData(x, train_set_x), VariableAndData(y, train_set_y, size=train_set_x.get_value(borrow=True).shape[0]))
-epochFunction, stateMananger = tt.getEpochTrainer(costFunction, variableAndData, batch_size=64, rms = True)        
+epochFunction, stateMananger = tt.getEpochTrainer(costFunction, variableAndData, batch_size=64, rms = True, momentum=0.9) 
     
 # Train with adaptive learning rate.
 stats = tt.trainALR(epochFunction, 
                     valid_func, 
                     initial_learning_rate=0.001, 
-                    epochs=1, 
+                    epochs=3, 
                     convergence_criteria=0.0001, 
                     max_runs=100,
                     state_manager = stateMananger)

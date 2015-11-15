@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import glob
 import os
 from Mammo.MammoData import MammoData, unpickleMammoData, pickleMammoData
@@ -153,18 +153,24 @@ def handleHiResData():
 
 
 
-def makeClassificationPatch(sample, patchSize, nPatches, margin):
+def makeClassificationPatch(sample, patchSize, nPatches, margin, rng = None):
 
-    rng = np.random.RandomState(1234)
+    if not rng:
+        rng = np.random.RandomState(1234)
 
     result = []    
     # Positive patches
     displace = rng.uniform(-patchSize/2 + margin, patchSize/2 - margin, size = (nPatches, nPatches))    
     for d in displace:
-        newSample = sample.clone()
-        if newSample.crop(newSample.circleX + d[0], newSample.circleY + d[1], patchSize, patchSize):
+        newSample = sample.crop_clone(sample.circleX + d[0], sample.circleY + d[1], patchSize, patchSize)
+        if newSample.hasCircle:
             if (newSample.width == patchSize) and (newSample.height == patchSize):                
                 result.append(newSample)
+        
+        #newSample = sample.clone()
+        #if newSample.crop(newSample.circleX + d[0], newSample.circleY + d[1], patchSize, patchSize):
+        #    if (newSample.width == patchSize) and (newSample.height == patchSize):                
+        #        result.append(newSample)
     
             
     # Negative patches.
@@ -173,22 +179,31 @@ def makeClassificationPatch(sample, patchSize, nPatches, margin):
     displaceY = rng.uniform(0, sample.height, size = (2*nPatches))    
     nNeg = 0
     for dX, dY in zip(displaceX, displaceY):
-        newSample = sample.clone()
-        if not newSample.crop(dX, dY, patchSize, patchSize):
+        newSample = sample.crop_clone(dX, dY, patchSize, patchSize)
+        if not newSample.hasCircle:
             if (newSample.width == patchSize) and (newSample.height == patchSize):                
                 result.append(newSample)
                 nNeg += 1
                 if nNeg >= nPos:
                     break    
+
+#        newSample = sample.clone()
+#        if not newSample.crop(dX, dY, patchSize, patchSize):
+#            if (newSample.width == patchSize) and (newSample.height == patchSize):                
+#                result.append(newSample)
+#                nNeg += 1
+#                if nNeg >= nPos:
+#                    break    
                                 
     return result
 
 
 def makeClassificationPatches(data, patchSize, margin = 1):
+    rng = np.random.RandomState(1234)
     nPatches = 50
     result = []
     for sample in data:
-        result.extend(makeClassificationPatch(sample, patchSize, nPatches, margin))
+        result.extend(makeClassificationPatch(sample, patchSize, nPatches, margin, rng=rng))
     return result
 
 def makeConvData(sample, patchSize, stride = None):
@@ -203,8 +218,9 @@ def makeConvData(sample, patchSize, stride = None):
     resultPositions = []
     for y in yPositions:
         for x in xPositions:
-            newSample = sample.clone()
-            newSample.crop(x, y, patchSize, patchSize)
+            newSample = sample.crop_clone(x, y, patchSize, patchSize)            
+            #newSample = sample.clone()
+            #newSample.crop(x, y, patchSize, patchSize)
             resultPatches.append(newSample)
             resultPositions.append((x, y))
 

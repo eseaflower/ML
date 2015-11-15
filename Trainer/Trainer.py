@@ -1,4 +1,4 @@
-import numpy
+﻿import numpy
 import theano
 import theano.tensor as T
 import time
@@ -17,8 +17,9 @@ class VariableAndData(object):
         return self.data[start:end]
 
 class StateManager(object):
-    def __init__(self, params):
+    def __init__(self, params, resetActions = None):
         self.params = params
+        self.resetActions = resetActions
         self.storedState = None
 
     def restore(self):
@@ -28,6 +29,11 @@ class StateManager(object):
                 value = self.storedState[paramIndex]
                 param.set_value(value)
     
+    def reset(self):
+        if self.resetActions:
+            for arg, action in self.resetActions:
+                action(arg)
+
     def save(self):
         # Get the current value of the parameters and store them
         self.storedState = []
@@ -39,7 +45,7 @@ class MLPBatchTrainer(object):
     def __init__(self):
         return
     
-    def getUpdates(self, cost, params, lr, rms=True):
+    def getUpdates(self, cost, params, lr, rms=True, momentum=None):
 
         # compute the gradient of cost with respect to theta (sotred in params)
         # the resulting gradients will be stored in a list gparams
@@ -53,15 +59,27 @@ class MLPBatchTrainer(object):
         rho = 0.9
         eps = 1e-6
         updates = []
+        resetActions = []
         if rms:
             # Use RMSProp (scale the gradient).
             for param, gparam in zip(params, gparams):
-                acc = theano.shared(param.get_value() * 0.)
+                acc = theano.shared(param.get_value() * 0.)                                
                 acc_new  = rho*acc + (1.0-rho)*gparam**2
+                updates.append((acc, acc_new)) 
                 g_scale = T.sqrt(acc_new + eps)
                 gparam = gparam/g_scale
-                updates.append((acc, acc_new)) 
-                updates.append((param, param - lr * gparam)) 
+                # gparam is the gradient step.
+                step = -lr*gparam
+                if momentum:
+                    paramValue = param.get_value()
+                    v = theano.shared(paramValue*0.)
+                    v_new = momentum*v + step
+                    updates.append((v, v_new))                    
+                    resetActions.append((v, lambda p: p.set_value(p.get_value()*0.)))
+                    step = momentum*v_new - step
+
+                updates.append((param, param + step)) 
+
         else:                    
             # given two list the zip A = [a1, a2, a3, a4] and B = [b1, b2, b3, b4] of
             # same length, zip generates a list C of same size, where each element
@@ -70,12 +88,12 @@ class MLPBatchTrainer(object):
             for param, gparam in zip(params, gparams):
                 updates.append((param, param - lr * gparam)) 
         
-        return updates            
+        return updates, resetActions
 
 
 
 
-    def getMinibatchTrainer(self, costFunction, variableToData, rms=True):
+    def getMinibatchTrainer(self, costFunction, variableToData, rms=True, momentum = None):
         # define params        
         lr = T.fscalar('lr')    
         start = T.iscalar('start')
@@ -86,9 +104,9 @@ class MLPBatchTrainer(object):
         cost = costFunction[1]
 
         # Get the updates.
-        updates = self.getUpdates(cost, params, lr, rms)
+        updates, resetActions = self.getUpdates(cost, params, lr, rms, momentum)
         # Store all state variables.
-        stateManager = StateManager([u[0] for u in updates])
+        stateManager = StateManager([u[0] for u in updates], resetActions)
 
         # Slice the data
         givens = dict()
@@ -107,17 +125,23 @@ class MLPBatchTrainer(object):
         
         return train_model, stateManager
 
-    def getEpochTrainer(self, costFunction, variableToData, batch_size = 512, rms=True):        
-        miniBatchFunction, stateManager = self.getMinibatchTrainer(costFunction, variableToData, rms)        
+    def getEpochTrainer(self, costFunction, variableToData, batch_size = 512, rms=True, momentum = None, randomize=False):        
+        miniBatchFunction, stateManager = self.getMinibatchTrainer(costFunction, variableToData, rms, momentum)        
         n_samples = variableToData[0].dataSize
         batch_size = min(batch_size, n_samples)
         n_batches = int(n_samples / batch_size)
 
+        # Use a deterministic state
+        rs = numpy.random.RandomState(1234)                                                
+        
         # Define function that runs one epoch
         def runEpoch(lr):                
             accumulated_cost = 0.
+            used_range = range(n_batches)
+            if randomize:                
+                used_range = rs.permutation(used_range)
             #c = []
-            for index in range(n_batches):
+            for index in used_range:
                 minibatchCost = miniBatchFunction(index * batch_size,
                                                   (index + 1) * batch_size,                                                  
                                                   lr)                
@@ -296,6 +320,8 @@ class MLPBatchTrainer(object):
                     print("Restoring state to previous best values")
                     state_manager.restore()
                     print("Done restore")
+                    print("Reseting")
+                    state_manager.reset()
             
             if score_delta > 0:
                 # Set previous to current

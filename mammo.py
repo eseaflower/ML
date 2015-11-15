@@ -1,4 +1,4 @@
-import os
+﻿import os
 import numpy as np
 import matplotlib.pyplot as plt
 import theano
@@ -178,17 +178,18 @@ def trainModel(modelFilename, trainData, validationData, size):
     #plotutils.plot_tensor_image(Wbefore)
 
     print("Size {0}".format(tst.output_size))
-    input_dimension = tst.output_size#size**2
+    input_dimension = size**2#tst.output_size
     output_dimension = 2
     classifier = nnlayer.MLPReg(rng=rng, 
-                                input=tst.output, 
+                                #input=tst.output, 
+                                input=x,
                                 topology=[(input_dimension,), 
-                                          (10, nnlayer.ReluLayer), 
+                                          (100, nnlayer.ReluLayer), 
                                           (output_dimension, nnlayer.LinearRegressionLayer)])   
     #classifier = nnlayer.MLPReg(rng=rng, input=tst.output, topology=[input_dimension, output_dimension], rectified=True, dropout_rate=0.5)   
     cost =  classifier.cost(y) #+ 0.003*classifier.L2_sqr #+ 0.003*tst.L2_sqr
     costParams = []    
-    costParams.extend(tst.params)
+    #costParams.extend(tst.params)
     costParams.extend(classifier.params)
     costFunction = (costParams, cost)
 
@@ -229,7 +230,7 @@ def trainModel(modelFilename, trainData, validationData, size):
                         initial_learning_rate=0.0003, 
                         epochs=1, 
                         convergence_criteria=0.0001, 
-                        max_runs=5,
+                        max_runs=15,
                         state_manager = stateMananger)
 
     validation_scores = [item["validation_score"] for item in stats]
@@ -240,7 +241,7 @@ def trainModel(modelFilename, trainData, validationData, size):
     plt.show()
 
     Wafter = tst.layers[0].W.get_value()
-    plotutils.plot_tensor_image(Wafter)
+    #plotutils.plot_tensor_image(Wafter)
 
     # Save model to disk
     persistence = PersistenceManager()

@@ -1,4 +1,4 @@
-import numpy as np
+﻿import numpy as np
 import scipy.ndimage as nimg
 import matplotlib.pyplot as plt
 import json
@@ -20,7 +20,7 @@ class MammoData(object):
         self.baseFilename = ""
         self.transform = Transform()
 
-    def clone(self):
+    def clone(self, copy_pixeldata=True):
         result = MammoData()
         result.baseFilename = self.baseFilename
         result.width = self.width
@@ -31,7 +31,8 @@ class MammoData(object):
             result.circleY = self.circleY
             
         result.transform = self.transform.clone()
-        result.pixelData = np.copy(self.pixelData)
+        if copy_pixeldata:
+            result.pixelData = np.copy(self.pixelData)
         return result
     
     def save(self, filename):
@@ -194,6 +195,30 @@ class MammoData(object):
                 return False
         
         return True
+
+    def crop_clone(self, centerX, centerY, wantedWidth, wantedHeight):
+        result = self.clone(False)
+        xStart = int(centerX - wantedWidth/2.0)
+        yStart = int(centerY - wantedHeight/2.0)
+        xEnd = xStart + wantedWidth
+        yEnd = yStart + wantedHeight
+
+        xStart = np.max([0, xStart])
+        yStart = np.max([0, yStart])
+        xEnd = np.min([self.width, xEnd])
+        yEnd = np.min([self.height, yEnd])
+        
+        # Copy the window
+        result.pixelData = np.copy(self.pixelData[yStart:yEnd, xStart:xEnd])
+        result.height = result.pixelData.shape[0]
+        result.width = result.pixelData.shape[1]
+        result.update_transform(Translate(-xStart, -yStart))
+        if result.hasCircle:
+            # Check that we don't cut out the circle marking.
+            if result.circleX < 0 or  result.circleY < 0 or result.circleX >= result.width or result.circleY >= result.height:
+                result.hasCircle = False                        
+        
+        return result
 
     # Make sure the transform is up-to-date
     def update_transform(self, prepend):

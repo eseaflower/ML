@@ -1,4 +1,4 @@
-import os
+﻿import os
 import numpy as np
 import matplotlib.pyplot as plt
 import theano
@@ -77,10 +77,10 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     input_dimension = patchSize**2
     output_dimension = 2
     classifier = nnlayer.MLPReg(rng=rng, input=x, topology=[(input_dimension,),
-                                                            (100, nnlayer.ReluLayer),
-                                                           (output_dimension, nnlayer.LogisticRegressionLayer)])
+                                                            (500, nnlayer.ReluLayer),                                                           
+                                                            (output_dimension, nnlayer.LogisticRegressionLayer)])
 
-    cost = classifier.cost(y) + 0.0001*classifier.L2_sqr
+    cost = classifier.cost(y) #+ 0.0003*classifier.L2_sqr
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost)
@@ -90,17 +90,24 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     # Create shared
     validation_x, validation_y = make_shared(validationData, patchSize, Wmat)
     valid_func = theano.function(inputs = [],
-                            outputs = [classifier.cost(y)],
+                            outputs = [T.mean(classifier.errors(y))],
+                            #outputs = [cost],
+                            #outputs = [classifier.cost(y)],
                             givens = {x:validation_x, y:validation_y})                            
 
     variableAndData = (VariableAndData(x, train_x), VariableAndData(y, train_y, size=len(trainData)))
-    epochFunction, stateMananger = tt.getEpochTrainer(costFunction, variableAndData, batch_size=64, rms = True)        
+    epochFunction, stateMananger = tt.getEpochTrainer(costFunction, 
+                                                      variableAndData, 
+                                                      batch_size=64, 
+                                                      rms = True, 
+                                                      momentum=0.9,
+                                                      randomize=True)        
         
     # Train with adaptive learning rate.
     stats = tt.trainALR(epochFunction, 
                         valid_func, 
-                        initial_learning_rate=0.0003, 
-                        epochs=1, 
+                        initial_learning_rate=0.001, 
+                        epochs=3, 
                         convergence_criteria=0.0001, 
                         max_runs=50,
                         state_manager = stateMananger)
@@ -111,6 +118,14 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     plt.plot(validation_scores, 'g')
     plt.plot(train_scorees, 'r')
     plt.show()
+
+
+    e_func = theano.function(inputs = [],
+                            outputs = [classifier.errors(y)],
+                            #outputs = [classifier.cost(y)],
+                            givens = {x:validation_x, y:validation_y})                            
+
+    print("avg error: {0}".format(np.mean(e_func())))
 
 
     mgr =  PersistenceManager()
@@ -152,7 +167,7 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
         print("#Pos error: {0}, avg: {1}".format(posCnt, posCnt / len(testData)))
         
     # Call the patch tests.        
-    testPatches()
+    #testPatches()
     
     
     def testConv():
@@ -194,7 +209,8 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
                 pCnt += 1
                 xStart = pos[0] - patchSize / 2
                 yStart = pos[1] - patchSize / 2
-                heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += pred
+                #heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += pred >= 0.5
+                heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += 1 if pred >= 0.5 else 0
                 avg_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += 1
                 whitened[yStart:yStart + patchSize, xStart:xStart + patchSize] = test_x[idx, :].reshape(patchSize, patchSize)
                 idx += 1
@@ -202,15 +218,18 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
             avg_error = errors / pCnt
             avg_pos_error = posError / posCount
             print("Avg error: {0}, Positive error: {1}".format(avg_error, avg_pos_error))
-            heat_map = heat_map #/ avg_map        
+            # Treat as distribution by using sum as partition func.
+            heat_map = heat_map / np.sum(heat_map)#avg_map                                
+            print("Max: {0}".format(np.max(heat_map)))
             heat_map /= np.max(heat_map)
 
-            #cutoff = 0.5*np.max(heat_map)
-            #heat_map -= cutoff
-            #heat_map = np.clip(heat_map, 0, 1.0)
-            #heat_map /= 1-cutoff
+            cutoff = 0.5*np.max(heat_map)
+            heat_map -= cutoff
+            heat_map = np.clip(heat_map, 0, 1.0)
+            heat_map /= 1-cutoff
             
-            
+                        
+
             #idxes = heat_map > 0
             #anot = np.copy(testImage.pixelData)
             #anot[idxes] = np.max(anot)
@@ -218,8 +237,8 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
 
             #plt.set_cmap('hot')
             f, axarr = plt.subplots(2)
-            #im = axarr[0].imshow(heat_map, cmap='hot')
-            im = axarr[0].imshow(whitened, cmap='gray')
+            im = axarr[0].imshow(heat_map +  testImage.pixelData/2, cmap='hot')
+            #im = axarr[0].imshow(whitened, cmap='gray')
             im = axarr[1].imshow(testImage.pixelData, cmap='gray')
             #plt.gray()
             #plt.imshow(heat_map)
@@ -229,7 +248,7 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
             plt.show()
             #testImage.show()
     # Run the convolutional tests.
-    #testConv()        
+    testConv()        
 
 
 def prepare_ZCA(filename, data, patchSize, margin):
@@ -258,7 +277,7 @@ def main():
     #prepare_ZCA(zcaFilename, trainDataImage, patchSize, margin)
     Wmat = load_ZCA(zcaFilename)
 
-    trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
+    #trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
     testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
 
 

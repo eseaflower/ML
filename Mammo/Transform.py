@@ -1,8 +1,8 @@
-import numpy as np
+﻿import numpy as np
 
 class Transform(object):
     def __init__(self, xform=None):
-        if xform == None:
+        if xform is None:
             xform = np.eye(3)
         self.transform = xform
     

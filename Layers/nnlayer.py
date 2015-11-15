@@ -1,4 +1,4 @@
-import numpy
+﻿import numpy
 
 import theano
 import theano.tensor as T
@@ -29,26 +29,50 @@ class ParameterFactory(object):
     def __init__(self, rng):
         self.rng = rng
     # Get a weight matrix
-    def create_weights(self, shape):
+    def create_weights(self, shape):        
         return numpy.zeros(shape, dtype=theano.config.floatX)
     # Get biases
     def create_biases(self, shape):
         return numpy.zeros(shape, dtype=theano.config.floatX)
 
-class NormalParameters(ParameterFactory):
-    def __init__(self, rng, a = 0.0, mu = 0.0, var = 1.0):
+
+class UniformParameters(ParameterFactory):
+    def __init__(self, rng, low = -0.1, high = 0.1):
         super().__init__(rng)
-        self.a = a
+        self.low = low
+        self.high = high
+        
+    # Get a weight matrix
+    def create_weights(self, shape):
+        return numpy.asarray(self.rng.uniform(self.low, self.high, size=shape), dtype=theano.config.floatX)
+
+class NormalParameters(ParameterFactory):
+    def __init__(self, rng, b = 0.0, mu = 0.0, var = 1.0):
+        super().__init__(rng)
+        self.b = b
         self.mu = mu
         self.var = var
     # Get a weight matrix
     def create_weights(self, shape):
-        return numpy.asarray(self.rng.normal(self.mu, self.var, size=shape), dtype=theano.config.floatX)
+        return numpy.asarray(self.rng.normal(self.mu, numpy.sqrt(self.var), size=shape), dtype=theano.config.floatX)
     # Get biases
     def create_biases(self, shape):
-        return self.a*numpy.ones(shape, dtype=theano.config.floatX)
-    
+        return self.b*numpy.ones(shape, dtype=theano.config.floatX)
 
+class ReluParameters(ParameterFactory):
+    # For relu we initialize so that the variance out is approx = 1
+    # Paper:
+    # DelvingDeepintoRectiﬁers: SurpassingHuman-LevelPerformanceonImageNetClassiﬁcation
+    # suggests using a zero mean Gaussian with var = 2/n_in, and b=0.
+    def __init__(self, rng):
+        super().__init__(rng)
+    
+    # Override to provide weights.
+    def create_weights(self, shape):
+        var = 2.0/shape[0]
+        mu = 0.0
+        return numpy.asarray(self.rng.normal(mu, numpy.sqrt(var), size=shape), dtype=theano.config.floatX)
+        
 class TanhParameters(ParameterFactory):
     def __init__(self, rng):
         super().__init__(rng)
@@ -98,7 +122,7 @@ class TanhLayer(BaseLayer):
 
 class ReluLayer(BaseLayer):
     def __init__(self, rng, input, n_in, n_out, W=None, b=None):
-        super().__init__(input, n_in, n_out, NormalParameters(rng, 1.0, 0.0, 0.01), W, b)
+        super().__init__(input, n_in, n_out, ReluParameters(rng), W, b)
         self.ctor = ReluLayer
         # Redefine the output
         self.output = rectify(self.output)
