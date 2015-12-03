@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{74066e39-b996-478e-b3ca-50d4e07718ca}</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>mammoClassification.py</StartupFile>
+    <StartupFile>rnn_test.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -77,6 +77,9 @@
     <Compile Include="Layers\nnlayer.py" />
     <Compile Include="remoterun\remoterunner.py" />
     <Compile Include="RemoteStart.py" />
+    <Compile Include="rnn_test.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="TheanoTests.py" />
     <Compile Include="remoterun\wireutil.py" />
     <Compile Include="Trainer\Persistence.py">
