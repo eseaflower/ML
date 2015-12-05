@@ -1,4 +1,4 @@
-import theano
+﻿import theano
 import theano.tensor as T
 import pickle
 import numpy as np
@@ -46,7 +46,7 @@ class model(object):
          #p_y_given_x_sentence = s.reshape((x.shape[0]* bs, nc)) 
          p_y_given_x_sentence = s
          #y_pred = T.argmax(p_y_given_x_sentence, axis=1) 
-         y_pred = T.argmax(p_y_given_x_sentence, axis=1) 
+         y_pred = T.argmax(p_y_given_x_sentence, axis=2) 
  
  
          # cost and gradients and learning rate 
@@ -121,8 +121,8 @@ vocsize = len(words2idx)
 nclasses = len(labels2idx) 
 nsentences = len(train_lex) 
 win = 7
-bs = 9
-lr = 0.0627142536696559
+bs = 32
+lr = 0.0627142536696559 
 
 rnn = model(    nh = 100, 
                      nc = nclasses, 
@@ -132,9 +132,8 @@ rnn = model(    nh = 100,
                      bs = bs) 
 
 for e in range(50):     
-    print("Epoch {0}".format(e))
-    batchSize = 5
-    nBatches = nsentences // batchSize
+    print("Epoch {0}".format(e))    
+    nBatches = nsentences // bs
     #for i in range(nsentences): 
     for b in range(nBatches): 
         
@@ -142,17 +141,26 @@ for e in range(50):
         #    print("{0}%".format(i*100/nsentences))
         s = 0
         r = []
-        for i in range(b*batchSize, (b+1)*batchSize):
+        for i in range(b*bs, (b+1)*bs):
             cw = contextwin(train_lex[i], win)
             s = np.max([s, len(cw)])
             r.append(cw)
-        
-        input = np.zeros((s, bs, win), dtype='int32')
+        input = np.ones((s, bs, win), dtype='int32')*(-1)
+        startIndex = b*bs
+        for c in range(bs):            
+            cw = contextwin(train_lex[c+startIndex], win)
+            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+              
                                 
         #cwords = [contextwin(train_lex[i], win) for i in range(b*batchSize, (b+1)*batchSize)] 
         #words  = map(lambda x: np.asarray(x).astype('int32'), minibatch(cwords, bs))         
-        labels = [train_y[i] for i in range(b*batchSize, (b+1)*batchSize)]
-        targets = np.zeros((s, bs), dtype='int32')
+        labels = [train_y[i] for i in range(b*bs, (b+1)*bs)]
+        targets = np.ones((s, bs), dtype='int32')*(-1)
+        for i in range(len(labels)):
+            v = labels[i]
+            targets[:len(v), i] = v
+        
+        #np.zeros((s, bs), dtype='int32')
         #rnn.train_sentence(cwords, labels, lr)
         rnn.train_sentence(input, targets, lr)
         rnn.normalize()
@@ -161,9 +169,26 @@ for e in range(50):
             #rnn.normalize() 
     
     cum_errors = 0
-    for i in range(len(test_lex)):
-        cwords = contextwin(test_lex[i], win)
-        labels = test_y[i]
-        #cum_errors += rnn.errors(cwords, labels)
+    nTestBatches = len(test_lex) // bs
+    for b in range(nTestBatches):
+        s = 0
+        r = []
+        for i in range(b*bs, (b+1)*bs):
+            cw = contextwin(test_lex[i], win)
+            s = np.max([s, len(cw)])
+            r.append(cw)
+        input = np.zeros((s, bs, win), dtype='int32')        
+        startIndex = b*bs
+        for c in range(bs):            
+            cw = contextwin(test_lex[c+startIndex], win)
+            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+
+        labels = [test_y[i] for i in range(b*bs, (b+1)*bs)]
+        targets = np.ones((s, bs), dtype='int32')*(-1)
+        for i in range(len(labels)):
+            v = labels[i]
+            targets[:len(v), i] = v
+
+        cum_errors += rnn.errors(input, targets)
 
     print("Test errors {0}".format(cum_errors))
