@@ -2,7 +2,11 @@
 import theano
 import theano.tensor as T
 import time
+import math
 import matplotlib.pyplot as plt
+from lasagne.updates import rmsprop
+
+from msvcrt import kbhit, getch
 
 
 class VariableAndData(object):
@@ -47,6 +51,14 @@ class MLPBatchTrainer(object):
     
     def getUpdates(self, cost, params, lr, rms=True, momentum=None):
 
+        #if rms:
+        # odict = rmsprop(cost, params, lr)
+        #    u = []
+        #    for k in odict:
+        #        u.append((k, odict[k]))
+
+        #    return u, []
+
         # compute the gradient of cost with respect to theta (sotred in params)
         # the resulting gradients will be stored in a list gparams
         gparams = []
@@ -90,10 +102,18 @@ class MLPBatchTrainer(object):
         
         return updates, resetActions
 
+    @staticmethod
+    def wrapUpdate(update):        
+        def inner(cost, params, lr):
+            resetActions = []
+            updates = []
+            updateDict = update(cost, params, lr)
+            for key in updateDict:
+                updates.append((key, updateDict[key]))
+            return updates, resetActions
+        return inner
 
-
-
-    def getMinibatchTrainer(self, costFunction, variableToData, rms=True, momentum = None):
+    def getMinibatchTrainer(self, costFunction, variableToData, rms=True, momentum = None, updateFunction = None):
         # define params        
         lr = T.fscalar('lr')    
         start = T.iscalar('start')
@@ -103,8 +123,11 @@ class MLPBatchTrainer(object):
         params = costFunction[0]
         cost = costFunction[1]
 
-        # Get the updates.
-        updates, resetActions = self.getUpdates(cost, params, lr, rms, momentum)
+        if updateFunction:
+            updates, resetActions = updateFunction(cost, params, lr)
+        else:
+            # Get the updates.
+            updates, resetActions = self.getUpdates(cost, params, lr, rms, momentum)
         # Store all state variables.
         stateManager = StateManager([u[0] for u in updates], resetActions)
 
@@ -125,11 +148,11 @@ class MLPBatchTrainer(object):
         
         return train_model, stateManager
 
-    def getEpochTrainer(self, costFunction, variableToData, batch_size = 512, rms=True, momentum = None, randomize=False):        
-        miniBatchFunction, stateManager = self.getMinibatchTrainer(costFunction, variableToData, rms, momentum)        
+    def getEpochTrainer(self, costFunction, variableToData, batch_size = 512, rms=True, momentum = None, randomize=False, updateFunction = None):        
+        miniBatchFunction, stateManager = self.getMinibatchTrainer(costFunction, variableToData, rms, momentum, updateFunction)        
         n_samples = variableToData[0].dataSize
         batch_size = min(batch_size, n_samples)
-        n_batches = int(n_samples / batch_size)
+        n_batches =  math.ceil(n_samples / batch_size)
 
         # Use a deterministic state
         rs = numpy.random.RandomState(1234)                                                
@@ -142,11 +165,12 @@ class MLPBatchTrainer(object):
                 used_range = rs.permutation(used_range)
             #c = []
             for index in used_range:
-                minibatchCost = miniBatchFunction(index * batch_size,
-                                                  (index + 1) * batch_size,                                                  
-                                                  lr)                
+                start_index = index * batch_size
+                end_index = min((index + 1) * batch_size, n_samples)
+                minibatchCost = miniBatchFunction(start_index, end_index, lr)                
                 #c.append(minibatchCost)
-                accumulated_cost += minibatchCost                    
+                # Add cost relative to the batch size.
+                accumulated_cost += minibatchCost * ((end_index - start_index) / batch_size)                    
             
             #plt.plot(c)    
             #plt.show()                
@@ -275,12 +299,18 @@ class MLPBatchTrainer(object):
 
         training_statistics = []
         improve_eps = 1e-6
-        improve_fraction = 1e-4
+        improve_fraction = 1e-4        
+        patience = 5
+        remaining_patience = patience
+
         for i in range(max_runs):
             
             # Do the first training
             epoch_costs = [train_function(current_learning_rate) for i in range(epochs)]
             
+            print("Last training cost: {0}".format(epoch_costs[-1]))
+
+
             validation_score = validation_function()[0]                             
 
             if validation_score < convergence_criteria:
@@ -309,30 +339,31 @@ class MLPBatchTrainer(object):
             print("{0} of {1} - Score: {2}, Delta: {3}".format(i, max_runs, validation_score, score_delta))
 
             training_statistics.append(iteration_statistics)
-            
-            if state_manager:
-                if score_delta > 0:
-                    # Save a new best state
-                    print("Overwriting state with new best values.")
-                    state_manager.save()
-                    print("Done writing state")
-                elif score_delta < 0:
-                    print("Restoring state to previous best values")
-                    state_manager.restore()
-                    print("Done restore")
-                    print("Reseting")
-                    state_manager.reset()
-            
+                                            
+            # Update learning rate based on relative validation score delta.
+            previous_learning_rate = current_learning_rate                        
+
+
             if score_delta > 0:
                 # Set previous to current
                 best_score = validation_score
-            
-            # Update learning rate based on relative validation score delta.
-            previous_learning_rate = current_learning_rate            
-            #if score_delta < improve_eps:
-            if delta_fraction < improve_fraction:
+                remaining_patience = patience
+                if state_manager:
+                    # Save a new best state
+                    print("Overwriting state with new best values.")
+                    state_manager.save()                                        
+            #elif score_delta < 0:
+            elif delta_fraction < improve_fraction:                
                 print("Delta fraction: {0} below {1}".format(delta_fraction, improve_fraction))
-                current_learning_rate *= 0.3                
+                remaining_patience -= 1
+                if remaining_patience < 0:
+                    current_learning_rate *= 0.3                
+                    remaining_patience = patience                
+                    if state_manager:
+                        print("Restoring state to previous best values")
+                        state_manager.restore()
+                        state_manager.reset()
+            
             # Cap the learning rate.
             current_learning_rate = float(numpy.max([numpy.min([current_learning_rate, max_learning_rate]), min_learning_rate]))        
         
@@ -348,3 +379,142 @@ class MLPBatchTrainer(object):
         t1 = time.time()
         training_time = t1 - t0
         return training_statistics
+
+
+    def trainALR2(self, train_function, validation_function, 
+                 initial_learning_rate=0.001, epochs=100, 
+                 convergence_criteria=0.001,
+                 max_runs = 30,
+                 state_manager = None):
+        best_score = None        
+        current_learning_rate = initial_learning_rate
+        
+        # Keep track of when we started.
+        t0 = time.time()
+
+        learning_rate_eps = 1e-8
+        max_learning_rate = 0.9
+        min_learning_rate = 1e-9
+
+        training_statistics = []
+        improve_eps = 1e-6
+        improve_fraction = 1e-4        
+        patience = 5
+        remaining_patience = patience
+
+        ts = CircularBuffer(10)
+
+        for i in range(max_runs):
+            
+            if kbhit():
+                getch()
+                cmd = input("Command (q, lr):")
+                if cmd == "q":
+                    print("Exiting...")
+                    break
+                elif cmd == "lr":
+                    lr_str = input("New learning rate:")
+                    current_learning_rate = float(lr_str)
+                    ts.reset()
+
+
+            # Do the first training
+            epoch_costs = [train_function(current_learning_rate) for i in range(epochs)]
+
+            validation_score = validation_function()[0]                  
+            print("{2}/{3} Training: {0}, Validation: {1}".format(epoch_costs[-1], validation_score, i, max_runs))           
+            if validation_score < convergence_criteria:
+                print("Converged")
+                break
+
+            if not best_score:
+                # Update the previous to get a baseline
+                print("First iteration. Baseline: {0}".format(validation_score))
+                best_score = validation_score
+                if state_manager:                    
+                    state_manager.save()
+                continue
+
+            # Save training scores.
+            for ec in epoch_costs:
+                ts.push(ec)
+            
+            y_start = ts.first()
+            y_end = ts.last()
+            if y_start > 0 and y_end > 0:
+                # We have a window of data.
+                y_delta = y_start - y_end
+                y_delta_fraction = y_delta / current_learning_rate
+                print("Delta: {0}, Fraction: {1}".format(y_delta, y_delta_fraction))
+                #if y_delta_fraction < improve_fraction:
+                #    if y_delta_fraction < 0 and state_manager:                        
+                #        print("Restoring previous best values")
+                #        state_manager.restore()
+                #        state_manager.reset()
+
+                #    # Change learning rate.                            
+                #    current_learning_rate *= 0.3
+                #    ts.reset()
+
+                #    # Exit if the learning rate is too small.
+                #    if current_learning_rate < 1e-8:
+                #        print("Learning rate vanished")
+                #        break
+                #    print("New learning rate: {0}".format(current_learning_rate))
+                    
+
+
+            # Compute score delta
+            score_delta = best_score - validation_score
+            iteration_statistics = {"training_costs":epoch_costs, 
+                                    "validation_score":validation_score, 
+                                    "learning_rate": current_learning_rate,
+                                    "score_delta":score_delta}
+            
+
+            training_statistics.append(iteration_statistics)
+                                            
+            if validation_score < best_score:
+                # Set previous to current
+                best_score = validation_score
+                if state_manager:
+                    # Save a new best state
+                    print("Overwriting state with new best values.")
+                    state_manager.save()                                        
+            
+
+                
+        # Training time
+        if state_manager:
+            # Make sure we are at the best settings.
+            state_manager.reset()
+            state_manager.restore()
+
+        t1 = time.time()
+        training_time = t1 - t0
+        return training_statistics
+
+
+class CircularBuffer(object):
+    def __init__(self, size):
+        self.size = size
+        self.reset()
+
+    def push(self, sample):
+        self.buffer[self.current_position] = sample
+        self.current_position = (self.current_position + 1) % self.size
+
+    def reset(self):
+        self.current_position = 0
+        self.buffer = [-1]*self.size
+
+    def index(self, i):
+        return (self.current_position +i) % self.size
+
+    def item(self, i):
+        return self.buffer[self.index(i)]
+
+    def first(self):
+        return self.item(0)
+    def last(self):
+        return self.item(-1)

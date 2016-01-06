@@ -9,6 +9,8 @@ from Layers.ConvNet import LeNetConvPoolLayer
 from Layers.LogisticRegression import LogisticRegression
 from Layers.LinearRegression import LinearRegression
 
+import lasagne
+
 def rectify(x):
     return T.maximum(x, 0.)
 
@@ -176,6 +178,77 @@ class LogisticRegressionLayer(LinearRegressionLayer):
     def cost(self, y):        
         return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]), y])         
 
+
+
+
+class LasangeNet(object):
+    def __init__(self, input, topology):
+
+        if len(topology[0]) > 1:
+            input_shape = topology[0]
+        else:
+            input_shape = (None, topology[0][0])
+        
+        self.input = input
+        self.layers = []
+        # First we need an input layer.
+        self.layers.append(lasagne.layers.InputLayer(input_shape, input))
+        for t in topology[1:]:
+            type = t[0]            
+            self.layers.append(type(self.layers[-1], t))
+        
+        # The last layer sould be the output
+        self.predict_output = lasagne.layers.get_output(self.layers[-1], self.input, deterministic=True)
+        # This output includes noise (if any noise-layer is included)
+        self.noised_output = lasagne.layers.get_output(self.layers[-1], self.input, deterministic=False)        
+
+        # Define L2 and L1 regularization
+        self.L1 = lasagne.regularization.regularize_network_params(self.layers[-1], lasagne.regularization.l1)
+        self.L2 = lasagne.regularization.regularize_network_params(self.layers[-1], lasagne.regularization.l2)
+
+        self.params = lasagne.layers.get_all_params(self.layers[-1])
+
+        
+    @staticmethod
+    def ReluLayer(previous_layer, args):
+        return lasagne.layers.DenseLayer(previous_layer, args[1], 
+                                         #W = lasagne.init.GlorotNormal(gain='relu'), 
+                                         W = lasagne.init.HeNormal(gain='relu'),
+                                         nonlinearity=lasagne.nonlinearities.rectify)
+    @staticmethod
+    def SigmoidLayer(previous_layer, args):
+        return lasagne.layers.DenseLayer(previous_layer, args[1], nonlinearity=lasagne.nonlinearities.sigmoid)
+    @staticmethod
+    def TanhLayer(previous_layer, args):
+        return lasagne.layers.DenseLayer(previous_layer, args[1], nonlinearity=lasagne.nonlinearities.tanh)
+    @staticmethod
+    def SoftmaxLayer(previous_layer, args):
+        return lasagne.layers.DenseLayer(previous_layer, args[1], nonlinearity=lasagne.nonlinearities.softmax)
+    @staticmethod
+    def DropoutLayer(previous_layer, args):        
+        additional_args = {}
+        if len(args) > 1:
+            if isinstance(args[1], dict):
+                additional_args = args[1]
+            else:
+                # Assume that we are given the dropout probabillity
+                additional_args['p'] = args[1]
+        return lasagne.layers.DropoutLayer(previous_layer, **additional_args)
+            
+
+class ClassificationNet(LasangeNet):
+    def __init__(self, input, topology):
+        super().__init__(input, topology)
+        self.y_pred = T.argmax(self.predict_output, axis=1)        
+
+    def cost(self, y):
+        return T.mean(T.nnet.categorical_crossentropy(self.noised_output, y))
+
+    def validation_cost(self, y):
+        return T.mean(T.nnet.categorical_crossentropy(self.predict_output, y))
+
+    def errors(self, y):
+        return T.sum(T.neq(self.y_pred, y))
 
 
 class MLPReg(object):

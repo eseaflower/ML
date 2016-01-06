@@ -12,6 +12,7 @@ from Trainer.Persistence import PersistenceManager
 import plotutils
 
 import pickle
+import lasagne
 
 
 
@@ -70,17 +71,27 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     train_x, train_y = make_shared(trainData, patchSize, Wmat)            
 
     rng = np.random.RandomState(1234)
+    lasagne.random.set_rng(rng)
+
     # allocate symbolic variables for the data
     x = T.matrix('x')  # the data is presented as rasterized images
     y = T.ivector('y')  # the labels are 0-1 labels.
 
     input_dimension = patchSize**2
     output_dimension = 2
-    classifier = nnlayer.MLPReg(rng=rng, input=x, topology=[(input_dimension,),
-                                                            (500, nnlayer.ReluLayer),                                                           
-                                                            (output_dimension, nnlayer.LogisticRegressionLayer)])
+    #classifier = nnlayer.MLPReg(rng=rng, input=x, topology=[(input_dimension,),
+    #                                                        (500, nnlayer.ReluLayer),                                                           
+    #                                                        (output_dimension, nnlayer.LogisticRegressionLayer)])
+    classifier = nnlayer.ClassificationNet(input=x, topology=[(input_dimension,),
+                                                       (nnlayer.LasangeNet.DropoutLayer, 0.2),
+                                                       (nnlayer.LasangeNet.ReluLayer, 500),
+                                                       (nnlayer.LasangeNet.DropoutLayer, ),
+                                                       #(nnlayer.LasangeNet.ReluLayer, 500),
+                                                       #(nnlayer.LasangeNet.DropoutLayer, ),
+                                                       (nnlayer.LasangeNet.SoftmaxLayer, output_dimension)])
 
-    cost = classifier.cost(y) #+ 0.0003*classifier.L2_sqr
+
+    cost = classifier.cost(y) #+ 0.0003*classifier.L2
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost)
@@ -90,31 +101,33 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     # Create shared
     validation_x, validation_y = make_shared(validationData, patchSize, Wmat)
     valid_func = theano.function(inputs = [],
-                            outputs = [T.mean(classifier.errors(y))],
+                            outputs = [classifier.validation_cost(y)],
                             #outputs = [cost],
                             #outputs = [classifier.cost(y)],
                             givens = {x:validation_x, y:validation_y})                            
 
+
     variableAndData = (VariableAndData(x, train_x), VariableAndData(y, train_y, size=len(trainData)))
     epochFunction, stateMananger = tt.getEpochTrainer(costFunction, 
                                                       variableAndData, 
-                                                      batch_size=64, 
+                                                      batch_size=512, 
                                                       rms = True, 
                                                       momentum=0.9,
-                                                      randomize=True)        
+                                                      randomize=True,
+                                                      updateFunction=MLPBatchTrainer.wrapUpdate(lasagne.updates.rmsprop))        
         
     # Train with adaptive learning rate.
-    stats = tt.trainALR(epochFunction, 
+    stats = tt.trainALR2(epochFunction, 
                         valid_func, 
-                        initial_learning_rate=0.001, 
-                        epochs=3, 
+                        #initial_learning_rate=0.001, 
+                        initial_learning_rate=0.01, 
+                        epochs=1, 
                         convergence_criteria=0.0001, 
-                        max_runs=50,
+                        max_runs=100,
                         state_manager = stateMananger)
 
     validation_scores = [item["validation_score"] for item in stats]
-    train_scorees = [item["training_costs"][-1] for item in stats]
-    #train_scorees = stats[0]["training_costs"]
+    train_scorees = [item["training_costs"][-1] for item in stats]    
     plt.plot(validation_scores, 'g')
     plt.plot(train_scorees, 'r')
     plt.show()
@@ -167,13 +180,17 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
         print("#Pos error: {0}, avg: {1}".format(posCnt, posCnt / len(testData)))
         
     # Call the patch tests.        
-    #testPatches()
+    testPatches()
     
     
     def testConv():
         # Create prediction function
+        #test_func = theano.function(inputs = [x],
+        #                    outputs = classifier.outputLayer.p_y_given_x[:, 1])
+
         test_func = theano.function(inputs = [x],
-                            outputs = classifier.outputLayer.p_y_given_x[:, 1])
+                                    outputs = classifier.predict_output[:, 1])
+
 
         for testImage in testDataImage:    
             convPatches, positions = utils.makeConvData(testImage, patchSize, stride=margin)
@@ -270,18 +287,15 @@ def main():
     margin = 4
     #makeClassificationData()
     modelFilename = r".\SavedModels\test_classification_model.pkl"
-    zcaFilename = r".\SavedModels\ZCA.pkl"    
+    zcaFilename = r".\SavedModels\ZCA.pkl"        
     trainDataImage, testDataImage = utils.loadClassificationData(split=0.9)    
     
     # prepare a whitening matrix.
     #prepare_ZCA(zcaFilename, trainDataImage, patchSize, margin)
-    Wmat = load_ZCA(zcaFilename)
+    Wmat = None#load_ZCA(zcaFilename)
 
-    #trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
-    testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
-
-
-
+    trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
+    #testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
 
 
     #sample = MammoData()

@@ -3,6 +3,7 @@ import theano.tensor as T
 import pickle
 import numpy as np
 from collections import OrderedDict
+import lasagne
 
 
 class model(object):       
@@ -38,7 +39,9 @@ class model(object):
              return [h_t, s_t] 
  
  
-         [h, s], _ = theano.scan(fn=recurrence,sequences=x, outputs_info=[self.h0, None], n_steps=x.shape[0]) 
+         [h, s], _ = theano.scan(fn=recurrence,sequences=x, 
+                                 outputs_info=[self.h0, None], 
+                                 n_steps=x.shape[0]) 
  
  
          p_y_given_x_lastword = s[-1,0,:] 
@@ -72,6 +75,36 @@ class model(object):
  
          self.normalize = theano.function( inputs = [], 
                           updates = {self.emb: self.emb/T.sqrt((self.emb**2).sum(axis=1)).dimshuffle(0,'x')})  
+
+
+class model2(object):       
+     def __init__(self, nh, nc, ne, de, cs, bs): 
+         ''' 
+         nh :: dimension of the hidden layer 
+         nc :: number of classes 
+         ne :: number of word embeddings in the vocabulary 
+         de :: dimension of the word embeddings 
+         cs :: word window context size  
+         bs :: batch size (number of samples)
+         ''' 
+         # Data is given as a tensor (batch, sequence, context size)
+         l_in = lasagne.layers.InputLayer((bs, None, cs))
+         # We have a tensor (batch size, sequence length, concatenated context win. embeddings)
+         l_emb = lasagne.layers.EmbeddingLayer(l_in, ne, de)
+         l_flatt_emb = lasagne.layers.flatten(l_emb, outdim=3)
+         
+         print("Output of after embedding: {0}".format(lasagne.layers.get_output_shape(l_flatt_emb, (bs, 11, cs))))
+
+         # Define recurent layer
+         l_r = lasagne.layers.RecurrentLayer(l_flatt_emb, nh, nonlinearity=lasagne.nonlinearities.sigmoid)
+
+         # Output shape should be (batch size, sequence, hidden)
+         print("Output after recurrence: {0}".format(lasagne.layers.get_output_shape(l_r, (bs, 11, cs))))
+         
+         l_res = lasagne.layers.ReshapeLayer(l_r, (-1, l_r.output_shape[2]))
+         print("Output after reshape: {0}".format(lasagne.layers.get_output_shape(l_res, (bs, 11, cs))))
+
+
 
 
 def loadData():
@@ -112,6 +145,7 @@ def minibatch(l, bs):
     return out 
 
 
+
 words2idx, labels2idx, tables2idx, train, test = loadData()
 
 train_lex, train_ne, train_y = train
@@ -121,7 +155,7 @@ vocsize = len(words2idx)
 nclasses = len(labels2idx) 
 nsentences = len(train_lex) 
 win = 7
-bs = 32
+bs = 3
 lr = 0.0627142536696559 
 
 rnn = model(    nh = 100, 
@@ -130,6 +164,14 @@ rnn = model(    nh = 100,
                      de = 100, 
                      cs = win,
                      bs = bs) 
+
+r2 = model2(    nh = 100, 
+                     nc = nclasses, 
+                     ne = vocsize, 
+                     de = 100, 
+                     cs = win,
+                     bs = bs)
+
 
 for e in range(50):     
     print("Epoch {0}".format(e))    
