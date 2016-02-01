@@ -79,6 +79,10 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
 
     input_dimension = patchSize**2
     output_dimension = 2
+
+    
+
+
     #classifier = nnlayer.MLPReg(rng=rng, input=x, topology=[(input_dimension,),
     #                                                        (500, nnlayer.ReluLayer),                                                           
     #                                                        (output_dimension, nnlayer.LogisticRegressionLayer)])

@@ -5,6 +5,9 @@ import time
 import math
 import matplotlib.pyplot as plt
 from lasagne.updates import rmsprop
+import pickle
+import os
+
 
 from msvcrt import kbhit, getch
 
@@ -24,7 +27,9 @@ class StateManager(object):
     def __init__(self, params, resetActions = None):
         self.params = params
         self.resetActions = resetActions
-        self.storedState = None
+        self.storedState = None        
+        self.initStat(r".\training_stats.pkl")        
+
 
     def restore(self):
         if self.storedState:
@@ -44,6 +49,22 @@ class StateManager(object):
         for param in self.params:
             # Assume they are all theano.shared
             self.storedState.append(param.get_value())
+
+    def initStat(self, filename):
+        self.statFile = filename
+        if os.path.isfile(self.statFile):
+            os.remove(self.statFile)
+        self.hasFile = False
+
+    def addStatistics(self, stats):
+        existing_data = []
+        if self.hasFile:
+            with open(self.statFile, "rb") as f:
+                existing_data = pickle.load(f)        
+        existing_data.append(stats)
+        with open(self.statFile, "wb") as f:
+            pickle.dump(existing_data, f)
+        self.hasFile = True
 
 class MLPBatchTrainer(object):
     def __init__(self):
@@ -413,13 +434,13 @@ class MLPBatchTrainer(object):
                     print("Exiting...")
                     break
                 elif cmd == "lr":
-                    lr_str = input("New learning rate:")
+                    lr_str = input("New learning rate ({0}):".format(current_learning_rate))
                     current_learning_rate = float(lr_str)
                     ts.reset()
 
 
             # Do the first training
-            epoch_costs = [train_function(current_learning_rate) for i in range(epochs)]
+            epoch_costs = [float(train_function(current_learning_rate)) for i in range(epochs)]
 
             validation_score = validation_function()[0]                  
             print("{2}/{3} Training: {0}, Validation: {1}".format(epoch_costs[-1], validation_score, i, max_runs))           
@@ -467,10 +488,12 @@ class MLPBatchTrainer(object):
             # Compute score delta
             score_delta = best_score - validation_score
             iteration_statistics = {"training_costs":epoch_costs, 
-                                    "validation_score":validation_score, 
+                                    "validation_score":float(validation_score), 
                                     "learning_rate": current_learning_rate,
                                     "score_delta":score_delta}
             
+
+            state_manager.addStatistics(iteration_statistics)
 
             training_statistics.append(iteration_statistics)
                                             

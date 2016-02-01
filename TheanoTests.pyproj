@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{74066e39-b996-478e-b3ca-50d4e07718ca}</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>rnn_test.py</StartupFile>
+    <StartupFile>mammoClassification.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -87,6 +87,9 @@
     </Compile>
     <Compile Include="Trainer\Trainer.py" />
     <Compile Include="Trainer\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="train_monitor.py">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>
