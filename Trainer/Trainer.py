@@ -158,11 +158,15 @@ class MLPBatchTrainer(object):
             givens[item.variable] = item.slice(start,end)
         
                 
+        # Build all outputs
+        output_list = [theano.Out(o, borrow=True) for o in costFunction[1:]]
+
         # Define the training function.
-        train_model = theano.function(inputs=[theano.Param(start, borrow = True), 
-                                              theano.Param(end, borrow=True), 
-                                              theano.Param(lr, borrow=True)],
-                                        outputs=theano.Out(cost, borrow=True),
+        train_model = theano.function(inputs=[theano.In(start, borrow = True), 
+                                              theano.In(end, borrow=True), 
+                                              theano.In(lr, borrow=True)],
+                                        #outputs=theano.Out(cost, borrow=True),
+                                        outputs=output_list,
                                         updates=updates,
                                         givens=givens)
 
@@ -179,23 +183,22 @@ class MLPBatchTrainer(object):
         rs = numpy.random.RandomState(1234)                                                
         
         # Define function that runs one epoch
-        def runEpoch(lr):                
-            accumulated_cost = 0.
+        def runEpoch(lr):                            
             used_range = range(n_batches)
             if randomize:                
                 used_range = rs.permutation(used_range)
-            #c = []
+            numberOfOutputs = len(costFunction) - 1
+            averaged_outputs = numpy.zeros((numberOfOutputs))            
             for index in used_range:
                 start_index = index * batch_size
                 end_index = min((index + 1) * batch_size, n_samples)
-                minibatchCost = miniBatchFunction(start_index, end_index, lr)                
-                #c.append(minibatchCost)
-                # Add cost relative to the batch size.
-                accumulated_cost += minibatchCost * ((end_index - start_index) / batch_size)                    
-            
-            #plt.plot(c)    
-            #plt.show()                
-            return accumulated_cost / n_batches
+                normalizationFactor = (end_index - start_index) / batch_size
+                minibatchOutput = miniBatchFunction(start_index, end_index, lr)                
+                # Add cost relative to the batch size.                
+                averaged_outputs += [output*normalizationFactor for output in minibatchOutput]                
+                            
+            averaged_outputs /= n_batches
+            return averaged_outputs
         return runEpoch, stateManager
 
     def train(self, x, y, costFunction, train_set_x, train_set_y, batch_size=512, learning_rate=0.1, epochs=10, max_batches = -1, weight=None, train_weight = None, rms=True):
@@ -250,7 +253,7 @@ class MLPBatchTrainer(object):
         index = T.lscalar()  # index to a [mini]batch
         if not weight:
             # Define the training function.
-            train_model = theano.function(inputs=[theano.Param(index, borrow=True)],
+            train_model = theano.function(inputs=[theano.In(index, borrow=True)],
                                           outputs=theano.Out(cost, borrow=True),
                                           updates=updates,
                                           givens={
@@ -403,11 +406,10 @@ class MLPBatchTrainer(object):
 
 
     def trainALR2(self, train_function, validation_function, 
-                 initial_learning_rate=0.001, epochs=100, 
-                 convergence_criteria=0.001,
+                 initial_learning_rate=0.001, 
                  max_runs = 30,
                  state_manager = None):
-        best_score = None        
+        best_outputs = None        
         current_learning_rate = initial_learning_rate
         
         # Keep track of when we started.
@@ -418,13 +420,6 @@ class MLPBatchTrainer(object):
         min_learning_rate = 1e-9
 
         training_statistics = []
-        improve_eps = 1e-6
-        improve_fraction = 1e-4        
-        patience = 5
-        remaining_patience = patience
-
-        ts = CircularBuffer(10)
-
         for i in range(max_runs):
             
             if kbhit():
@@ -436,77 +431,41 @@ class MLPBatchTrainer(object):
                 elif cmd == "lr":
                     lr_str = input("New learning rate ({0}):".format(current_learning_rate))
                     current_learning_rate = float(lr_str)
-                    ts.reset()
 
 
             # Do the first training
-            epoch_costs = [float(train_function(current_learning_rate)) for i in range(epochs)]
-
-            validation_score = validation_function()[0]                  
-            print("{2}/{3} Training: {0}, Validation: {1}".format(epoch_costs[-1], validation_score, i, max_runs))           
-            if validation_score < convergence_criteria:
-                print("Converged")
-                break
-
-            if not best_score:
+            train_outputs = train_function(current_learning_rate)
+            validation_outputs = validation_function()                        
+            print("{0}/{1}: Train - C:{2:.7f} A:{3:.4f}, Validation - C:{4:.7f} A:{5:.4f}".format(i, max_runs, 
+                                                                                                  float(train_outputs[0]), 
+                                                                                                  float(train_outputs[1]), 
+                                                                                                  float(validation_outputs[0]), 
+                                                                                                  float(validation_outputs[1])))
+            
+            if not best_outputs:
                 # Update the previous to get a baseline
-                print("First iteration. Baseline: {0}".format(validation_score))
-                best_score = validation_score
+                print("First iteration. Baseline: {0}".format(validation_outputs))
+                best_outputs = validation_outputs
                 if state_manager:                    
                     state_manager.save()
                 continue
 
-            # Save training scores.
-            for ec in epoch_costs:
-                ts.push(ec)
-            
-            y_start = ts.first()
-            y_end = ts.last()
-            if y_start > 0 and y_end > 0:
-                # We have a window of data.
-                y_delta = y_start - y_end
-                y_delta_fraction = y_delta / current_learning_rate
-                print("Delta: {0}, Fraction: {1}".format(y_delta, y_delta_fraction))
-                #if y_delta_fraction < improve_fraction:
-                #    if y_delta_fraction < 0 and state_manager:                        
-                #        print("Restoring previous best values")
-                #        state_manager.restore()
-                #        state_manager.reset()
-
-                #    # Change learning rate.                            
-                #    current_learning_rate *= 0.3
-                #    ts.reset()
-
-                #    # Exit if the learning rate is too small.
-                #    if current_learning_rate < 1e-8:
-                #        print("Learning rate vanished")
-                #        break
-                #    print("New learning rate: {0}".format(current_learning_rate))
-                    
-
-
-            # Compute score delta
-            score_delta = best_score - validation_score
-            iteration_statistics = {"training_costs":epoch_costs, 
-                                    "validation_score":float(validation_score), 
-                                    "learning_rate": current_learning_rate,
-                                    "score_delta":score_delta}
+            # Store iteration statistics
+            iteration_statistics = {"training_outputs":train_outputs, 
+                                    "validation_outputs":validation_outputs, 
+                                    "learning_rate": current_learning_rate}
             
 
             state_manager.addStatistics(iteration_statistics)
-
             training_statistics.append(iteration_statistics)
                                             
-            if validation_score < best_score:
-                # Set previous to current
-                best_score = validation_score
+            if validation_outputs[1] > best_outputs[1]:
+                best_outputs = validation_outputs
                 if state_manager:
                     # Save a new best state
                     print("Overwriting state with new best values.")
                     state_manager.save()                                        
-            
-
-                
+                            
         # Training time
         if state_manager:
             # Make sure we are at the best settings.

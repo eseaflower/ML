@@ -87,8 +87,9 @@ class model2(object):
          cs :: word window context size  
          bs :: batch size (number of samples)
          ''' 
+         idxs = T.itensor3() # time->samples->features as many columns as context window size/lines as words in the sentence 
          # Data is given as a tensor (batch, sequence, context size)
-         l_in = lasagne.layers.InputLayer((bs, None, cs))
+         l_in = lasagne.layers.InputLayer((bs, None, cs), idxs)
          # We have a tensor (batch size, sequence length, concatenated context win. embeddings)
          l_emb = lasagne.layers.EmbeddingLayer(l_in, ne, de)
          l_flatt_emb = lasagne.layers.flatten(l_emb, outdim=3)
@@ -104,7 +105,31 @@ class model2(object):
          l_res = lasagne.layers.ReshapeLayer(l_r, (-1, l_r.output_shape[2]))
          print("Output after reshape: {0}".format(lasagne.layers.get_output_shape(l_res, (bs, 11, cs))))
 
+         l_out = lasagne.layers.DenseLayer(l_res, nc, nonlinearity=lasagne.nonlinearities.softmax)
+         print("Output shape: {0}".format(lasagne.layers.get_output_shape(l_out, (bs, 11, cs))))
 
+
+         y_sentence = T.ivector('y_sentence')
+         y_mask = T.vector('y_mask')
+         pred = lasagne.layers.get_output(l_out)         
+         c_pred = T.argmax(pred, axis = 1)
+         sentence_nll = T.mean(lasagne.objectives.categorical_crossentropy(pred, y_sentence) * y_mask)
+         sentence_error = T.sum(T.neq(c_pred, y_sentence)*y_mask)
+         params = lasagne.layers.get_all_params(l_out)
+         sentence_gradients = T.grad(sentence_nll, params)
+         lr = 0.0627142536696559
+         #sentence_updates = OrderedDict((p, p - lr*g) for p, g in zip(params, sentence_gradients))
+         sentence_updates = lasagne.updates.momentum(sentence_nll, params, lr)
+
+         self.train_sentence = theano.function(inputs  = [idxs, y_sentence, y_mask], 
+                                               outputs = sentence_nll, 
+                                               updates = sentence_updates) 
+
+         self.normalize = theano.function( inputs = [], 
+                                           updates = {l_emb.W: l_emb.W/T.sqrt((l_emb.W**2).sum(axis=1)).dimshuffle(0,'x')})  
+
+
+         self.errors = theano.function(inputs=[idxs, y_sentence, y_mask], outputs=sentence_error)             
 
 
 def loadData():
@@ -155,15 +180,15 @@ vocsize = len(words2idx)
 nclasses = len(labels2idx) 
 nsentences = len(train_lex) 
 win = 7
-bs = 3
+bs = 12
 lr = 0.0627142536696559 
 
-rnn = model(    nh = 100, 
-                     nc = nclasses, 
-                     ne = vocsize, 
-                     de = 100, 
-                     cs = win,
-                     bs = bs) 
+#rnn = model(    nh = 100, 
+#                     nc = nclasses, 
+#                     ne = vocsize, 
+#                     de = 100, 
+#                     cs = win,
+#                     bs = bs) 
 
 r2 = model2(    nh = 100, 
                      nc = nclasses, 
@@ -175,8 +200,9 @@ r2 = model2(    nh = 100,
 
 for e in range(50):     
     print("Epoch {0}".format(e))    
-    nBatches = nsentences // bs
+    nBatches = (nsentences-bs) // bs
     #for i in range(nsentences): 
+    acc_nll = 0
     for b in range(nBatches): 
         
         #if i % 100 == 0:
@@ -187,29 +213,35 @@ for e in range(50):
             cw = contextwin(train_lex[i], win)
             s = np.max([s, len(cw)])
             r.append(cw)
-        input = np.ones((s, bs, win), dtype='int32')*(-1)
+        input = np.ones((bs,s, win), dtype='int32')*(-1)
         startIndex = b*bs
         for c in range(bs):            
             cw = contextwin(train_lex[c+startIndex], win)
-            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+            input[c, :len(cw) , :] = np.array(cw, dtype='int32')
               
                                 
         #cwords = [contextwin(train_lex[i], win) for i in range(b*batchSize, (b+1)*batchSize)] 
         #words  = map(lambda x: np.asarray(x).astype('int32'), minibatch(cwords, bs))         
         labels = [train_y[i] for i in range(b*bs, (b+1)*bs)]
-        targets = np.ones((s, bs), dtype='int32')*(-1)
-        for i in range(len(labels)):
-            v = labels[i]
-            targets[:len(v), i] = v
+        targets = np.ones((bs*s, ), dtype='int32')*(nclasses-1)
+        mask = np.zeros((bs*s, ), dtype='float32')
+        for l in range(bs):
+            v = labels[l]
+            mask[l*s: l*s+ len(v)] = 1.0
+            targets[l*s: l*s + len(v)] = v
+
+        
+        #for i in range(len(labels)):
+        #    v = labels[i]
+        #    targets[i, :len(v)] = v
         
         #np.zeros((s, bs), dtype='int32')
         #rnn.train_sentence(cwords, labels, lr)
-        rnn.train_sentence(input, targets, lr)
-        rnn.normalize()
-        #for word_batch , label_last_word in zip(words, labels): 
-            #rnn.train(word_batch, label_last_word, lr) 
-            #rnn.normalize() 
-    
+        nll = r2.train_sentence(input, targets, mask)
+        acc_nll += nll
+        r2.normalize()
+    print("Epoch acc cost: {0}".format(acc_nll))                        
+
     cum_errors = 0
     nTestBatches = len(test_lex) // bs
     for b in range(nTestBatches):
@@ -219,18 +251,113 @@ for e in range(50):
             cw = contextwin(test_lex[i], win)
             s = np.max([s, len(cw)])
             r.append(cw)
-        input = np.zeros((s, bs, win), dtype='int32')        
+        input = np.zeros((bs, s, win), dtype='int32')        
         startIndex = b*bs
         for c in range(bs):            
             cw = contextwin(test_lex[c+startIndex], win)
-            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+            input[c, :len(cw) , :] = np.array(cw, dtype='int32')
 
         labels = [test_y[i] for i in range(b*bs, (b+1)*bs)]
-        targets = np.ones((s, bs), dtype='int32')*(-1)
-        for i in range(len(labels)):
-            v = labels[i]
-            targets[:len(v), i] = v
+        targets = np.ones((s*bs,), dtype='int32')*(-1)
+        mask = np.zeros((bs*s, ), dtype='float32')
+        for l in range(bs):
+            v = labels[l]
+            mask[l*s: l*s+ len(v)] = 1.0
+            targets[l*s: l*s + len(v)] = v
 
-        cum_errors += rnn.errors(input, targets)
+        cum_errors += r2.errors(input, targets, mask)
 
     print("Test errors {0}".format(cum_errors))
+
+        #print("Sentence nll: {0}".format(nll))
+        #rnn.normalize()
+        #for word_batch , label_last_word in zip(words, labels): 
+            #rnn.train(word_batch, label_last_word, lr) 
+            #rnn.normalize() 
+    
+    #cum_errors = 0
+    #nTestBatches = len(test_lex) // bs
+    #for b in range(nTestBatches):
+    #    s = 0
+    #    r = []
+    #    for i in range(b*bs, (b+1)*bs):
+    #        cw = contextwin(test_lex[i], win)
+    #        s = np.max([s, len(cw)])
+    #        r.append(cw)
+    #    input = np.zeros((s, bs, win), dtype='int32')        
+    #    startIndex = b*bs
+    #    for c in range(bs):            
+    #        cw = contextwin(test_lex[c+startIndex], win)
+    #        input[:len(cw), c , :] = np.array(cw, dtype='int32')
+
+    #    labels = [test_y[i] for i in range(b*bs, (b+1)*bs)]
+    #    targets = np.ones((s, bs), dtype='int32')*(-1)
+    #    for i in range(len(labels)):
+    #        v = labels[i]
+    #        targets[:len(v), i] = v
+
+    #    cum_errors += rnn.errors(input, targets)
+
+    #print("Test errors {0}".format(cum_errors))
+
+#for e in range(50):     
+#    print("Epoch {0}".format(e))    
+#    nBatches = nsentences // bs
+#    #for i in range(nsentences): 
+#    for b in range(nBatches): 
+        
+#        #if i % 100 == 0:
+#        #    print("{0}%".format(i*100/nsentences))
+#        s = 0
+#        r = []
+#        for i in range(b*bs, (b+1)*bs):
+#            cw = contextwin(train_lex[i], win)
+#            s = np.max([s, len(cw)])
+#            r.append(cw)
+#        input = np.ones((s, bs, win), dtype='int32')*(-1)
+#        startIndex = b*bs
+#        for c in range(bs):            
+#            cw = contextwin(train_lex[c+startIndex], win)
+#            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+              
+                                
+#        #cwords = [contextwin(train_lex[i], win) for i in range(b*batchSize, (b+1)*batchSize)] 
+#        #words  = map(lambda x: np.asarray(x).astype('int32'), minibatch(cwords, bs))         
+#        labels = [train_y[i] for i in range(b*bs, (b+1)*bs)]
+#        targets = np.ones((s, bs), dtype='int32')*(-1)
+#        for i in range(len(labels)):
+#            v = labels[i]
+#            targets[:len(v), i] = v
+        
+#        #np.zeros((s, bs), dtype='int32')
+#        #rnn.train_sentence(cwords, labels, lr)
+#        rnn.train_sentence(input, targets, lr)
+#        rnn.normalize()
+#        #for word_batch , label_last_word in zip(words, labels): 
+#            #rnn.train(word_batch, label_last_word, lr) 
+#            #rnn.normalize() 
+    
+#    cum_errors = 0
+#    nTestBatches = len(test_lex) // bs
+#    for b in range(nTestBatches):
+#        s = 0
+#        r = []
+#        for i in range(b*bs, (b+1)*bs):
+#            cw = contextwin(test_lex[i], win)
+#            s = np.max([s, len(cw)])
+#            r.append(cw)
+#        input = np.zeros((s, bs, win), dtype='int32')        
+#        startIndex = b*bs
+#        for c in range(bs):            
+#            cw = contextwin(test_lex[c+startIndex], win)
+#            input[:len(cw), c , :] = np.array(cw, dtype='int32')
+
+#        labels = [test_y[i] for i in range(b*bs, (b+1)*bs)]
+#        targets = np.ones((s, bs), dtype='int32')*(-1)
+#        for i in range(len(labels)):
+#            v = labels[i]
+#            targets[:len(v), i] = v
+
+#        cum_errors += rnn.errors(input, targets)
+
+#    print("Test errors {0}".format(cum_errors))

@@ -206,7 +206,7 @@ class LasangeNet(object):
         self.L1 = lasagne.regularization.regularize_network_params(self.layers[-1], lasagne.regularization.l1)
         self.L2 = lasagne.regularization.regularize_network_params(self.layers[-1], lasagne.regularization.l2)
 
-        self.params = lasagne.layers.get_all_params(self.layers[-1])
+        self.params = lasagne.layers.get_all_params(self.layers[-1], trainable=True)
 
         
     @staticmethod
@@ -215,6 +215,7 @@ class LasangeNet(object):
                                          #W = lasagne.init.GlorotNormal(gain='relu'), 
                                          W = lasagne.init.HeNormal(gain='relu'),
                                          nonlinearity=lasagne.nonlinearities.rectify)
+
     @staticmethod
     def SigmoidLayer(previous_layer, args):
         return lasagne.layers.DenseLayer(previous_layer, args[1], nonlinearity=lasagne.nonlinearities.sigmoid)
@@ -234,7 +235,12 @@ class LasangeNet(object):
                 # Assume that we are given the dropout probabillity
                 additional_args['p'] = args[1]
         return lasagne.layers.DropoutLayer(previous_layer, **additional_args)
-            
+    
+    @staticmethod            
+    def BatchNorm(previous_layer, args):
+        # For batch norm we expect a secondary layer in args.
+        secondary_type = args[1]
+        return lasagne.layers.batch_norm(secondary_type(previous_layer, args[1:]))
 
 class ClassificationNet(LasangeNet):
     def __init__(self, input, topology):
@@ -249,6 +255,9 @@ class ClassificationNet(LasangeNet):
 
     def errors(self, y):
         return T.sum(T.neq(self.y_pred, y))
+    
+    def accuracy(self, y):
+        return 1.0 - (self.errors(y) / y.shape[0])
 
 
 class MLPReg(object):

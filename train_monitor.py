@@ -26,8 +26,8 @@ class FileChangeMonitor(object):
 def handleChange(filename):    
     with open(filename, "rb") as f:
         data = pickle.load(f)
-    train = [item["training_costs"][-1] for item in data]
-    validation = [item["validation_score"] for item in data]
+    train = [item["training_outputs"][1] for item in data]
+    validation = [item["validation_outputs"][1] for item in data]
     plt.plot(train, 'r')    
     plt.plot(validation, 'g')
     plt.show()

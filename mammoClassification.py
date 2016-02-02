@@ -87,9 +87,10 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     #                                                        (500, nnlayer.ReluLayer),                                                           
     #                                                        (output_dimension, nnlayer.LogisticRegressionLayer)])
     classifier = nnlayer.ClassificationNet(input=x, topology=[(input_dimension,),
-                                                       (nnlayer.LasangeNet.DropoutLayer, 0.2),
-                                                       (nnlayer.LasangeNet.ReluLayer, 500),
-                                                       (nnlayer.LasangeNet.DropoutLayer, ),
+                                                       #(nnlayer.LasangeNet.DropoutLayer, 0.2),
+                                                       (nnlayer.LasangeNet.BatchNorm, nnlayer.LasangeNet.ReluLayer, 500),
+                                                       #(nnlayer.LasangeNet.ReluLayer, 500),
+                                                       #(nnlayer.LasangeNet.DropoutLayer, ),
                                                        #(nnlayer.LasangeNet.ReluLayer, 500),
                                                        #(nnlayer.LasangeNet.DropoutLayer, ),
                                                        (nnlayer.LasangeNet.SoftmaxLayer, output_dimension)])
@@ -98,14 +99,14 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
     cost = classifier.cost(y) #+ 0.0003*classifier.L2
     costParams = []
     costParams.extend(classifier.params)
-    costFunction = (costParams, cost)
+    costFunction = (costParams, cost, classifier.accuracy(y))
 
     tt = MLPBatchTrainer()
 
     # Create shared
     validation_x, validation_y = make_shared(validationData, patchSize, Wmat)
     valid_func = theano.function(inputs = [],
-                            outputs = [classifier.validation_cost(y)],
+                            outputs = [classifier.validation_cost(y), classifier.accuracy(y)],
                             #outputs = [cost],
                             #outputs = [classifier.cost(y)],
                             givens = {x:validation_x, y:validation_y})                            
@@ -125,24 +126,23 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, Wmat=None):
                         valid_func, 
                         #initial_learning_rate=0.001, 
                         initial_learning_rate=0.01, 
-                        epochs=1, 
-                        convergence_criteria=0.0001, 
                         max_runs=100,
                         state_manager = stateMananger)
 
-    validation_scores = [item["validation_score"] for item in stats]
-    train_scorees = [item["training_costs"][-1] for item in stats]    
+    validation_scores = [item["validation_outputs"][1] for item in stats]
+    train_scorees = [item["training_outputs"][1] for item in stats]    
     plt.plot(validation_scores, 'g')
     plt.plot(train_scorees, 'r')
     plt.show()
 
 
     e_func = theano.function(inputs = [],
-                            outputs = [classifier.errors(y)],
+                            outputs = classifier.accuracy(y),
                             #outputs = [classifier.cost(y)],
                             givens = {x:validation_x, y:validation_y})                            
 
-    print("avg error: {0}".format(np.mean(e_func())))
+    #print("avg error: {0}".format(np.mean(e_func())))
+    print("validation accuracy: {0}".format(e_func()))
 
 
     mgr =  PersistenceManager()
@@ -228,8 +228,8 @@ def testModel(modelFilename, testDataImage, patchSize, margin, Wmat = None):
                 
                 errors += error
                 pCnt += 1
-                xStart = pos[0] - patchSize / 2
-                yStart = pos[1] - patchSize / 2
+                xStart = int(pos[0] - patchSize / 2)
+                yStart = int(pos[1] - patchSize / 2)
                 #heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += pred >= 0.5
                 heat_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += 1 if pred >= 0.5 else 0
                 avg_map[yStart:yStart + patchSize, xStart:xStart + patchSize] += 1
@@ -298,8 +298,8 @@ def main():
     #prepare_ZCA(zcaFilename, trainDataImage, patchSize, margin)
     Wmat = None#load_ZCA(zcaFilename)
 
-    trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
-    #testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
+    #trainModel(modelFilename, trainDataImage, patchSize, margin, Wmat)
+    testModel(modelFilename, testDataImage, patchSize, margin, Wmat)
 
 
     #sample = MammoData()
