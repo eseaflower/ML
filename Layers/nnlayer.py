@@ -241,6 +241,24 @@ class LasangeNet(object):
         # For batch norm we expect a secondary layer in args.
         secondary_type = args[1]
         return lasagne.layers.batch_norm(secondary_type(previous_layer, args[1:]))
+    
+    @staticmethod            
+    def Reshape(previous_layer, args):
+        return lasagne.layers.reshape(previous_layer, args[1])
+    @staticmethod            
+    def Conv(previous_layer, args):
+        additional_args = {}
+        if len(args) > 3:
+            if isinstance(args[2], dict):
+                additional_args = args[2]
+        return lasagne.layers.Conv2DLayer(previous_layer, args[1], args[2], **additional_args)
+    @staticmethod            
+    def Pool(previous_layer, args):
+        pool_size=2
+        if len(args) > 1:
+            pool_size = args[1]
+        return lasagne.layers.MaxPool2DLayer(previous_layer, pool_size)
+
 
 class ClassificationNet(LasangeNet):
     def __init__(self, input, topology):
