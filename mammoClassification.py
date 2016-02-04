@@ -72,9 +72,10 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, mu=None):
     #                                                        (output_dimension, nnlayer.LogisticRegressionLayer)])
     classifier = nnlayer.ClassificationNet(input=x, topology=[(input_dimension,),
                                                        (nnlayer.LasangeNet.Reshape, (-1, 1, patchSize, patchSize)),
-                                                       (nnlayer.LasangeNet.Conv, 32, 3),
+                                                       (nnlayer.LasangeNet.Conv, 32, 3, {'pad':'same'}),
                                                        (nnlayer.LasangeNet.Pool,),
-                                                       (nnlayer.LasangeNet.Conv, 64, 3),
+                                                       (nnlayer.LasangeNet.Conv, 64, 3, {'pad':'same'}),
+                                                       (nnlayer.LasangeNet.Pool,),
                                                               #(nnlayer.LasangeNet.DropoutLayer, 0.2),
                                                        #(nnlayer.LasangeNet.BatchNorm, nnlayer.LasangeNet.ReluLayer, 500),
                                                        #(nnlayer.LasangeNet.ReluLayer, 500),
@@ -93,13 +94,27 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, mu=None):
 
     # Create shared
     validation_x, validation_y = make_shared(validationData, patchSize, mu)
-    valid_func = theano.function(inputs = [],
-                            outputs = [classifier.validation_cost(y), classifier.accuracy(y)],
-                            #outputs = [cost],
-                            #outputs = [classifier.cost(y)],
-                            givens = {x:validation_x, y:validation_y})                            
+    
+    v_start = T.iscalar()
+    v_end = T.iscalar()
+    bv_func = theano.function(inputs = [v_start, v_end],
+                        outputs = [classifier.validation_cost(y), classifier.accuracy(y)],
+                        givens = {x:validation_x[v_start:v_end], y:validation_y[v_start:v_end]})                            
 
-
+    def batch_validation():
+        maxIdx = len(validationData)
+        nv_batches =  maxIdx // 128
+        tc = [0, 0]
+        for i in range(nv_batches):
+            d_start = min(i*128, maxIdx)
+            d_end = min((i + 1)*128, maxIdx)
+            bc = bv_func(d_start, d_end)
+            factor = (d_end - d_start) / 128.0
+            tc[0] += bc[0]*factor
+            tc[1] += bc[1]*factor
+        tc[0] /= nv_batches
+        tc[1] /= nv_batches
+        return tc
     variableAndData = (VariableAndData(x, train_x), VariableAndData(y, train_y, size=len(trainData)))
     epochFunction, stateMananger = tt.getEpochTrainer(costFunction, 
                                                       variableAndData, 
@@ -111,7 +126,8 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, mu=None):
         
     # Train with adaptive learning rate.
     stats = tt.trainALR2(epochFunction, 
-                        valid_func, 
+                        #valid_func, 
+                        batch_validation,
                         #initial_learning_rate=0.001, 
                         initial_learning_rate=0.01, 
                         max_runs=100,
@@ -124,13 +140,13 @@ def trainModel(modelFilename, allTrainDataImage, patchSize, margin, mu=None):
     plt.show()
 
 
-    e_func = theano.function(inputs = [],
-                            outputs = classifier.accuracy(y),
-                            #outputs = [classifier.cost(y)],
-                            givens = {x:validation_x, y:validation_y})                            
+    #e_func = theano.function(inputs = [],
+    #                        outputs = classifier.accuracy(y),
+    #                        #outputs = [classifier.cost(y)],
+    #                        givens = {x:validation_x, y:validation_y})                            
 
-    #print("avg error: {0}".format(np.mean(e_func())))
-    print("validation accuracy: {0}".format(e_func()))
+    ##print("avg error: {0}".format(np.mean(e_func())))
+    #print("validation accuracy: {0}".format(e_func()))
 
 
     mgr =  PersistenceManager()
@@ -146,8 +162,40 @@ def testModel(modelFilename, testDataImage, patchSize, margin, mu = None):
     x, y, classifier = mgr.load_model()
 
     conv_layer = classifier.layers[2]
-    W = conv_layer.W.get_value(borrow=False)
-    plotutils.plot_tensor_image(W)
+    #W = conv_layer.W.get_value(borrow=False)
+    #plotutils.plot_tensor_image(W)
+
+
+
+    def testBackward():        
+        #x_s = theano.shared(np.random.normal(0.0, 0.1, size=(1,patchSize*patchSize)).astype('float32'))
+        x_s = theano.shared(np.zeros((1, patchSize*patchSize), dtype='float32'))
+        y_s = theano.shared(np.ones((1,), dtype='int32'))
+        c = classifier.validation_cost(y) + 0.01*T.sum(abs(x))
+        loss = theano.clone(c, {x:x_s, y:y_s})                           
+        upd = lasagne.updates.rmsprop(loss, [x_s], learning_rate=0.01)
+        func = theano.function(inputs=[],
+                               outputs = loss,
+                               updates = upd)
+
+
+
+        for i in range(10000):
+            res = func()
+            print("Loss: {0}".format(res))
+            #if i%100 == 0:
+            #    img = x_s.get_value(borrow=False)
+            #    img = img.reshape((patchSize, patchSize))
+            #    plt.imshow(img, cmap='gray')
+            #    plt.show()            
+
+        img = x_s.get_value(borrow=False)
+        img = img.reshape((patchSize, patchSize))
+        plt.imshow(img, cmap='gray')
+        plt.show()            
+
+
+    #testBackward()
 
 
 
@@ -253,7 +301,7 @@ def testModel(modelFilename, testDataImage, patchSize, margin, mu = None):
             print("Max: {0}".format(np.max(heat_map)))
             heat_map /= np.max(heat_map)
 
-            cutoff = 0.5*np.max(heat_map)
+            cutoff = 0.75*np.max(heat_map)
             heat_map -= cutoff
             heat_map = np.clip(heat_map, 0, 1.0)
             heat_map /= 1-cutoff
@@ -296,7 +344,7 @@ def load_MU(filename):
 
 
 def main():
-    patchSize = 16
+    patchSize = 32
     margin = 4
     #makeClassificationData()
     modelFilename = r".\SavedModels\test_classification_model.pkl"
@@ -304,11 +352,11 @@ def main():
     trainDataImage, testDataImage = utils.loadClassificationData(split=0.9)    
     
     # prepare a whitening matrix.
-    #prepare_MU(MUFilename, trainDataImage, patchSize, margin)
+    prepare_MU(MUFilename, trainDataImage, patchSize, margin)
     mu = load_MU(MUFilename)
 
-    #trainModel(modelFilename, trainDataImage, patchSize, margin, mu)
-    testModel(modelFilename, testDataImage, patchSize, margin, mu)
+    trainModel(modelFilename, trainDataImage, patchSize, margin, mu)
+    #testModel(modelFilename, testDataImage, patchSize, margin, mu)
 
 
     #sample = MammoData()
