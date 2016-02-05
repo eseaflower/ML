@@ -28,8 +28,13 @@ def handleChange(filename):
         data = pickle.load(f)
     train = [item["training_outputs"][1] for item in data]
     validation = [item["validation_outputs"][1] for item in data]
-    plt.plot(train, 'r')    
-    plt.plot(validation, 'g')
+    train_cost = [item["training_outputs"][0] for item in data]
+    validation_cost = [item["validation_outputs"][0] for item in data]
+    f, axarr = plt.subplots(2)   
+    axarr[0].plot(train, 'r')    
+    axarr[0].plot(validation, 'g')
+    axarr[1].plot(train_cost, 'r')    
+    axarr[1].plot(validation_cost, 'g')    
     plt.show()
 
 filename = r".\training_stats.pkl"

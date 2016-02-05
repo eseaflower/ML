@@ -420,13 +420,19 @@ class MLPBatchTrainer(object):
         min_learning_rate = 1e-9
 
         training_statistics = []
+        use_best = True
         for i in range(max_runs):
             
             if kbhit():
                 getch()
-                cmd = input("Command (q, lr):")
+                cmd = input("Command (q - best, c - current, lr - learning rate):")
                 if cmd == "q":
-                    print("Exiting...")
+                    print("Exiting using best model...")
+                    use_best = True
+                    break
+                elif cmd == "c":
+                    print("Exiting using current model...")
+                    use_best = False
                     break
                 elif cmd == "lr":
                     lr_str = input("New learning rate ({0}):".format(current_learning_rate))
@@ -467,7 +473,7 @@ class MLPBatchTrainer(object):
                     state_manager.save()                                        
                             
         # Training time
-        if state_manager:
+        if use_best and state_manager:
             # Make sure we are at the best settings.
             state_manager.reset()
             state_manager.restore()
