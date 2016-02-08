@@ -258,7 +258,9 @@ class LasangeNet(object):
         if len(args) > 1:
             pool_size = args[1]
         return lasagne.layers.MaxPool2DLayer(previous_layer, pool_size)
-
+    @staticmethod            
+    def DimShuffle(previous_layer, args):
+        return lasagne.layers.dimshuffle(previous_layer, args[1])
 
 class ClassificationNet(LasangeNet):
     def __init__(self, input, topology):
