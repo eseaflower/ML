@@ -249,9 +249,12 @@ class LasangeNet(object):
     def Conv(previous_layer, args):
         additional_args = {}
         if len(args) > 3:
-            if isinstance(args[2], dict):
-                additional_args = args[2]
-        return lasagne.layers.Conv2DLayer(previous_layer, args[1], args[2], **additional_args)
+            if isinstance(args[3], dict):
+                additional_args = args[3]
+        return lasagne.layers.Conv2DLayer(previous_layer, args[1], args[2],
+                                          W = lasagne.init.HeNormal(gain='relu'), 
+                                          nonlinearity = lasagne.nonlinearities.rectify,
+                                          **additional_args)
     @staticmethod            
     def Pool(previous_layer, args):
         pool_size=2
@@ -261,17 +264,42 @@ class LasangeNet(object):
     @staticmethod            
     def DimShuffle(previous_layer, args):
         return lasagne.layers.dimshuffle(previous_layer, args[1])
+    @staticmethod            
+    def ConvRelu(previous_layer, args):
+        return LasangeNet.Conv(previous_layer, (LasangeNet.Conv, args[1], args[2], {'pad':'valid'}))
+    @staticmethod            
+    def ConvSoftmax(previous_layer, args):
+        softmax_layer = lasagne.layers.Conv2DLayer(previous_layer, args[1], 
+                                                   args[2], 
+                                                   pad='valid', 
+                                                   nonlinearity=Softmax4D)
+        return softmax_layer        
+        
+# Function for doing softmax on a 4D tensor 
+#(the class scores are assumes to be along the second dimension)
+# This is consitent with a Lasagne conv output (batch, score, x, y)
+def Softmax4D(x):
+    e_x = theano.tensor.exp(x - x.max(axis=1, keepdims=True))
+    return e_x / e_x.sum(axis=1, keepdims=True)
+
+
 
 class ClassificationNet(LasangeNet):
     def __init__(self, input, topology):
         super().__init__(input, topology)
-        self.y_pred = T.argmax(self.predict_output, axis=1)        
+        self.flat_predict_output = self.predict_output
+        self.flat_noised_output = self.noised_output
+        if self.predict_output.ndim > 2:
+            self.flat_predict_output = self.predict_output.flatten(2)
+            self.flat_noised_output = self.noised_output.flatten(2)
+
+        self.y_pred = T.argmax(self.flat_predict_output, axis=1)        
 
     def cost(self, y):
-        return T.mean(T.nnet.categorical_crossentropy(self.noised_output, y))
+        return T.mean(T.nnet.categorical_crossentropy(self.flat_noised_output, y))
 
     def validation_cost(self, y):
-        return T.mean(T.nnet.categorical_crossentropy(self.predict_output, y))
+        return T.mean(T.nnet.categorical_crossentropy(self.flat_predict_output, y))
 
     def errors(self, y):
         return T.sum(T.neq(self.y_pred, y))
