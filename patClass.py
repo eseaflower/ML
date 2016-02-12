@@ -15,6 +15,8 @@ from Trainer.Persistence import PersistenceManager
 import os.path
 import json
 import scipy.ndimage as nimg
+from count_data_parser import load_from_extract_path, load_slides, test_from_extract_path
+
 
 
 
@@ -181,7 +183,7 @@ def train(trainX, trainY, validationX, validationY, modelFilename, patchSize, mu
                                                        #(nnlayer.LasangeNet.SoftmaxLayer, output_dimension)])
 
 
-    cost = classifier.cost(y) + 0.003*classifier.L2
+    cost = classifier.cost(y) + 0.03*classifier.L2
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost, classifier.accuracy(y))
@@ -228,7 +230,7 @@ def train(trainX, trainY, validationX, validationY, modelFilename, patchSize, mu
                         #valid_func, 
                         batch_validation,
                         #initial_learning_rate=0.001, 
-                        initial_learning_rate=0.01, 
+                        initial_learning_rate=0.001, 
                         max_runs=10000,
                         state_manager = stateMananger)
 
@@ -290,31 +292,20 @@ def test(modelFilename, test_images, patchSize, mu):
     mgr.set_filename(modelFilename)
     x, y, classifier = mgr.load_model()
     
-    eval_func = theano.function(inputs = [x],
-                                outputs = classifier.flat_predict_output[:, 1])
-
     full_eval_func = theano.function(inputs = [x],
                             outputs = classifier.predict_output[:, 1])
 
-
-    xg, yg = np.meshgrid(np.arange(-patchSize/2.0, patchSize/2.0), np.arange(-patchSize/2.0, patchSize/2.0))    
-    sigma = 2.0*patchSize/2.0
-    weights = np.exp((-1.0/sigma**2)*(xg**2 + yg**2))        
-    weights = np.outer(weights, [1, 1, 1]).reshape(patchSize, patchSize, 3)
-    #plt.imshow(weights)
-    #plt.show()
-
-
     for img in test_images:
-        
+                                
         print("Staring evaluate image...")
-
+        
         data_shape = (1,) + img.shape
         reshaped_img = (img - mu).reshape(data_shape)
         full_out = full_eval_func(reshaped_img)[0]
+
         # Upsample the output map
         zoom_factors = np.asarray(img.shape[:2]) / np.asarray(full_out.shape)
-        full_out = nimg.zoom(full_out, zoom_factors)
+        full_out = nimg.zoom(full_out, zoom_factors, order=1)
         full_out = np.clip(full_out, 0.0, 1.0)
 
 
@@ -322,84 +313,15 @@ def test(modelFilename, test_images, patchSize, mu):
         full_heat_map = np.zeros(full_out.shape + (3,), dtype='float32')
         full_heat_map[:, :, 1] = full_out
         full_heat_map[:, :, 0] = 1-full_out
-
-        length = np.sqrt(np.sum(full_heat_map**2, axis = 2)).reshape(full_heat_map.shape[0], full_heat_map.shape[1], 1)
-        full_heat_map /= length
-        #np.max(full_heat_map, axis=2).reshape(full_heat_map.shape[0], full_heat_map.shape[1], 1)
-
-        #positive_indexes = full_out >= 0.5
-        #negative_indexes = full_out < 0.5
-        #full_heat_map[positive_indexes, :] = np.outer(full_out[positive_indexes], [0, 1, 0])
-        #full_heat_map[negative_indexes, :] = np.outer(1-full_out[negative_indexes], [1, 0, 0])
-
+                 
+        alpha = 0.5
+        full_heat_map =alpha*full_heat_map + (1-alpha)*img
 
         f, axarr = plt.subplots(nrows = 1, ncols = 2)
         im = axarr[0].imshow(full_heat_map) #+  img/2)        
         im = axarr[1].imshow(img)
         plt.show()
         
-        # Old patched style of showing results.
-        def patch_vis():
-            # Use generator
-            px = []
-            py = []
-            patches = []
-            predictions = []
-            pending_patches = []
-            limit = 64
-            for gpatch, patchX, patchY in full_conv_patches_generator(img, patchSize, 1):
-                gpatch = np.asarray(gpatch) - mu
-                pending_patches.extend(gpatch)
-                if len(pending_patches) >= limit:
-                    patch_prediction = eval_func(pending_patches)
-                    predictions.extend(patch_prediction)
-                    pending_patches = []
-                px.append(patchX)
-                py.append(patchY)
-        
-            if len(pending_patches) > 0:
-                patch_prediction = eval_func(pending_patches)
-                predictions.extend(patch_prediction)
-                pending_patches = []
-
-            print("Done evaluating image")
-            #px, py, patches = full_conv_patches(img, patchSize, 1)
-            #testData = None
-            #testData = np.asarray(patches, dtype='float32')
-            #testData -= mu
-            #predictions = eval_func(testData)
-            
-            heat_map = np.zeros_like(img, dtype = 'float32') + 1e-5
-            avg_map = np.zeros_like(img, dtype = 'float32') + 1e-5        
-            idx = 0
-            for pred, posX, posY in zip(predictions, px, py):
-                value = pred if pred >= 0.5 else 1-pred            
-                heat_map[posY:posY + patchSize, posX:posX + patchSize] += weights*([0, value, 0] if pred >= 0.5 else [value, 0, 0])
-                avg_map[posY:posY + patchSize, posX:posX + patchSize] += 1                                    
-
-            
-            
-
-            # Treat as distribution by using sum as partition func.
-            #heat_map = heat_map / np.sum(heat_map)#avg_map                                
-            #print("Max: {0}".format(np.max(heat_map)))
-            #heat_map /= np.max(heat_map)
-        
-
-            heat_map /= np.max(heat_map, axis=2).reshape(heat_map.shape[0], heat_map.shape[1], 1)
-            #cutoff = 0.5*np.max(heat_map)
-            #heat_map -= cutoff
-            #heat_map = np.clip(heat_map, 0, 1.0)
-            #heat_map /= 1-cutoff
-                                    
-            #plt.set_cmap('hot')
-            f, axarr = plt.subplots(nrows = 1, ncols = 2)
-            im = axarr[0].imshow(heat_map) #+  img/2)        
-            im = axarr[1].imshow(img)
-            plt.show()
-        
-        #patch_vis()
-
 
 def create_mean(data, filename, channels = False):
     if channels:        
@@ -526,12 +448,23 @@ def load_annod_data():
 
     return imageData, labels
 
-patchSize = 16
-patchesPerCell = 10
-create_annot_data(patchSize, patchesPerCell)
-imageData, labels = load_annod_data()
-trainX, validationX = splitData(imageData)
-trainY, validationY = splitData(labels)
+def shuffle_data(data, labels):
+    indexes = rnd_state.permutation(data.shape[0])
+    return data[indexes], labels[indexes]
+
+#patchSize = 16
+#patchesPerCell = 10
+#create_annot_data(patchSize, patchesPerCell)
+#imageData, labels = load_annod_data()
+extract_path = r"C:\work\PathologyCore\Tools\CellCountingEvaluator\bin\Debug\extract_test"
+pattern = "*0.5*"
+imageData, labels = load_from_extract_path(extract_path, pattern)
+imageData, labels = shuffle_data(imageData, labels)
+# Should be a batch of RGB patches, grab the first image dimension.
+patchSize = imageData.shape[1]
+
+trainX, validationX = splitData(imageData, split=0.75)
+trainY, validationY = splitData(labels, split=0.75)
 
 modelFilename = "./SavedModels/annot_model.pkl"
 muFilename = "./SavedModels/annot_mu.pkl"
@@ -543,7 +476,7 @@ def t():
 #t()
 
 def v():
-    test_images = load_annot_test_images()
+    test_images = test_from_extract_path(extract_path, pattern) #load_annot_test_images()
     test(modelFilename, test_images, patchSize, mu)
 v()
 

@@ -34,6 +34,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="adbuilder2.py" />
+    <Compile Include="count_data_parser.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="origMammo.py" />
     <Compile Include="mammoClassification.py">
       <SubType>Code</SubType>
