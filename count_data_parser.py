@@ -252,7 +252,7 @@ def test():
     data_path = r"C:\work\PathologyCore\Tools\CellCountingEvaluator\bin\Debug\extract_test"    
     patch_size = 32
     scale = 0.5
-    process_slides(data_path, patch_size, scale,balanced = True, test_split=0.5)
+    process_slides(data_path, patch_size, scale,balanced = True, test_split=0.35)
 
     #data, labels = load_from_extract_path(data_path)
     #print(data.shape)

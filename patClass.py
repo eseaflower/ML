@@ -163,27 +163,19 @@ def train(trainX, trainY, validationX, validationY, modelFilename, patchSize, mu
     input_dimension = (None,None, None, 3)
     output_dimension = 2
     
-    #classifier = nnlayer.ClassificationNet(input=x, topology=[input_dimension,
-    #                                                          (nnlayer.LasangeNet.DropoutLayer, 0.2),                                                               
-    #                                                          (nnlayer.LasangeNet.ReluLayer, 1000),
-    #                                                          (nnlayer.LasangeNet.DropoutLayer, ),                                                                
-    #                                                          (nnlayer.LasangeNet.SoftmaxLayer, output_dimension)])
     classifier = nnlayer.ClassificationNet(input=x, topology=[input_dimension,
                                                        (nnlayer.LasangeNet.DimShuffle, (0, 3, 1, 2)),
-                                                       #(nnlayer.LasangeNet.Reshape, (-1, 3, patchSize, patchSize)),
                                                        (nnlayer.LasangeNet.Conv, 32, 3, {'pad':'same'}),
                                                        (nnlayer.LasangeNet.Pool,),
                                                        (nnlayer.LasangeNet.Conv, 64, 3, {'pad':'same'}),
                                                        (nnlayer.LasangeNet.Pool,),
                                                        (nnlayer.LasangeNet.DropoutLayer, ),
-                                                       #(nnlayer.LasangeNet.ReluLayer, 256),
-                                                       (nnlayer.LasangeNet.ConvRelu, 256, int(patchSize/(2*2)), {'pad':'valid'}),
+                                                       (nnlayer.LasangeNet.ConvRelu, 256, int(patchSize/(2*2))),
                                                        (nnlayer.LasangeNet.DropoutLayer,),
                                                        (nnlayer.LasangeNet.ConvSoftmax, output_dimension, 1)])
-                                                       #(nnlayer.LasangeNet.SoftmaxLayer, output_dimension)])
 
 
-    cost = classifier.cost(y) + 0.03*classifier.L2
+    cost = classifier.cost(y) + 0.003*classifier.L2
     costParams = []
     costParams.extend(classifier.params)
     costFunction = (costParams, cost, classifier.accuracy(y))
@@ -304,21 +296,36 @@ def test(modelFilename, test_images, patchSize, mu):
         full_out = full_eval_func(reshaped_img)[0]
 
         # Upsample the output map
-        zoom_factors = np.asarray(img.shape[:2]) / np.asarray(full_out.shape)
+        #zoom_factors = np.asarray(img.shape[:2]) / np.asarray(full_out.shape)
+        # The total downsampling is 4
+        zoom_factors = (4, 4)
         full_out = nimg.zoom(full_out, zoom_factors, order=1)
         full_out = np.clip(full_out, 0.0, 1.0)
 
 
         # Generate RGB image from predictions.
-        full_heat_map = np.zeros(full_out.shape + (3,), dtype='float32')
-        full_heat_map[:, :, 1] = full_out
-        full_heat_map[:, :, 0] = 1-full_out
-                 
+        full_heat_map = np.zeros(full_out.shape + (3,), dtype='float32')                
+        def soft_heatmap():
+            full_heat_map[:, :, 1] = full_out 
+            full_heat_map[:, :, 0] = 1-full_out
+        def hard_heatmap():
+            p_idx = full_out >= 0.5
+            n_idx = full_out < 0.5
+            full_heat_map[p_idx, 1] = 1
+            full_heat_map[n_idx, 0] = 1
+        
+        soft_heatmap()
+        
+                         
+        offset = int(patchSize/2)
         alpha = 0.5
-        full_heat_map =alpha*full_heat_map + (1-alpha)*img
+        merged_image = (1-alpha)*img
+        merged_image[offset:offset+full_heat_map.shape[0], offset:offset+full_heat_map.shape[1]] += alpha*full_heat_map
+        #full_heat_map =alpha*full_heat_map + (1-alpha)*image_crop
 
         f, axarr = plt.subplots(nrows = 1, ncols = 2)
-        im = axarr[0].imshow(full_heat_map) #+  img/2)        
+        #im = axarr[0].imshow(full_heat_map) #+  img/2)        
+        im = axarr[0].imshow(merged_image)
         im = axarr[1].imshow(img)
         plt.show()
         
@@ -463,8 +470,8 @@ imageData, labels = shuffle_data(imageData, labels)
 # Should be a batch of RGB patches, grab the first image dimension.
 patchSize = imageData.shape[1]
 
-trainX, validationX = splitData(imageData, split=0.75)
-trainY, validationY = splitData(labels, split=0.75)
+trainX, validationX = splitData(imageData, split=0.9)
+trainY, validationY = splitData(labels, split=0.9)
 
 modelFilename = "./SavedModels/annot_model.pkl"
 muFilename = "./SavedModels/annot_mu.pkl"
